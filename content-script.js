@@ -1592,6 +1592,7 @@ function createSidebarHTML() {
             <textarea id="sidebar-text-prompts" placeholder="A sunset over the ocean
 A cat playing in the garden
 A robot dancing in the rain"></textarea>
+            <div id="text-prompt-counter" style="text-align: right; font-size: 12px; color: #a47bff; margin-top: 4px;">0 prompts</div>
           </div>
           <button class="btn-primary" id="sidebar-add-text-queue">Add to Queue</button>
         </div>
@@ -1835,6 +1836,18 @@ function setupSidebarEvents() {
       updateQueueDisplay();
       document.querySelector('.tab[data-tab="queue"]').click();
     });
+  }
+
+  // Text prompts counter - update live as user types
+  const textPromptsArea = document.getElementById('sidebar-text-prompts');
+  const textPromptCounter = document.getElementById('text-prompt-counter');
+  if (textPromptsArea && textPromptCounter) {
+    const updateTextCounter = () => {
+      const prompts = textPromptsArea.value.split('\n').filter(p => p.trim());
+      textPromptCounter.textContent = `${prompts.length} prompt${prompts.length !== 1 ? 's' : ''}`;
+    };
+    textPromptsArea.addEventListener('input', updateTextCounter);
+    updateTextCounter(); // Initial count
   }
 
   // Add to queue button - Character Video
