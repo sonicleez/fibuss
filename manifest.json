@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Google Labs Flow Automator",
+  "version": "1.0.0",
+  "description": "Automation extension for Google Labs Flow (Veo) - Text to Video, Image to Video, Character Sync, Queue Management, Auto-Download",
+  "permissions": [
+    "storage",
+    "downloads",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://labs.google/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://labs.google/fx/vi/tools/flow",
+        "https://labs.google/fx/vi/tools/flow/*",
+        "https://labs.google/fx/*/tools/flow",
+        "https://labs.google/fx/*/tools/flow/*"
+      ],
+      "css": [
+        "sidebar.css"
+      ],
+      "js": [
+        "content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Automator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 400px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+    }
+
+    .container {
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 18px;
+      margin-bottom: 16px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.3s;
+    }
+
+    .tab:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .tab.active {
+      background: rgba(255, 255, 255, 0.4);
+      font-weight: 600;
+    }
+
+    .tab-content {
+      display: none;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      font-size: 13px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+      font-family: inherit;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 6px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #2196F3;
+    }
+
+    .btn-secondary:hover {
+      background: #0b7dda;
+    }
+
+    .btn-danger {
+      background: #f44336;
+    }
+
+    .btn-danger:hover {
+      background: #da190b;
+    }
+
+    .character-list {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+
+    .character-item {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .queue-info {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .settings-row label {
+      flex: 1;
+      margin: 0;
+    }
+
+    .settings-row input[type="number"] {
+      width: 80px;
+      padding: 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+      font-size: 12px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .status-line {
+      margin-bottom: 4px;
+    }
+
+    .small-text {
+      font-size: 11px;
+      opacity: 0.8;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 Flow Automator</h1>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="text-video">Text→Video</button>
+      <button class="tab" data-tab="image-video">Image→Video</button>
+      <button class="tab" data-tab="character">Character</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- Text to Video Tab -->
+    <div class="tab-content active" id="text-video">
+      <div class="form-group">
+        <label>Prompts (1 dòng = 1 video)</label>
+        <textarea id="text-prompts" placeholder="A sunset over the ocean&#10;A cat playing in the garden&#10;..."></textarea>
+      </div>
+      <button id="add-text-queue">➕ Thêm vào hàng chờ</button>
+    </div>
+
+    <!-- Image to Video Tab -->
+    <div class="tab-content" id="image-video">
+      <div class="form-group">
+        <label>Start Frame Images</label>
+        <input type="file" id="start-images" accept="image/*" multiple>
+        <div class="small-text">Chọn nhiều ảnh, mỗi ảnh sẽ tạo 1 video</div>
+      </div>
+      <div class="form-group">
+        <label>End Frame Images (cùng số lượng)</label>
+        <input type="file" id="end-images" accept="image/*" multiple>
+      </div>
+      <div class="form-group">
+        <label>Prompt (optional)</label>
+        <input type="text" id="image-prompt" placeholder="Smooth transition...">
+      </div>
+      <button id="add-image-queue">➕ Thêm vào hàng chờ</button>
+    </div>
+
+    <!-- Character Sync Tab -->
+    <div class="tab-content" id="character">
+      <div class="form-group">
+        <label>Tên nhân vật</label>
+        <input type="text" id="char-name" placeholder="Sarah">
+      </div>
+      <div class="form-group">
+        <label>Reference Images (1-3 ảnh)</label>
+        <input type="file" id="char-images" accept="image/*" multiple>
+      </div>
+      <button id="add-character" class="btn-secondary">💾 Lưu nhân vật</button>
+
+      <div class="character-list" id="character-list">
+        <!-- Characters will be listed here -->
+      </div>
+
+      <div class="form-group">
+        <label>Hành động với nhân vật</label>
+        <textarea id="char-actions" placeholder="Sarah walking in the park&#10;Sarah eating ice cream&#10;..."></textarea>
+      </div>
+      <button id="add-char-queue">➕ Thêm vào hàng chờ</button>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-content" id="settings">
+      <div class="queue-info">
+        <strong>Hàng chờ:</strong> <span id="queue-count">0</span> tasks
+      </div>
+
+      <div class="settings-row">
+        <label>Delay giữa các task (ms):</label>
+        <input type="number" id="delay-ms" value="5000" min="1000" step="1000">
+      </div>
+
+      <div class="checkbox-group">
+        <input type="checkbox" id="auto-download" checked>
+        <label for="auto-download">Tự động tải xuống video</label>
+      </div>
+
+      <button id="start-queue" class="btn-secondary">▶️ Bắt đầu xử lý hàng chờ</button>
+      <button id="clear-queue" class="btn-danger" style="margin-top: 8px;">🗑️ Xóa hàng chờ</button>
+
+      <div class="status" id="status-log">
+        <div class="status-line">Ready...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
