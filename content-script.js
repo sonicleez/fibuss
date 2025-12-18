@@ -1882,10 +1882,17 @@ function setupSidebarEvents() {
 
       // All prompts valid - add to queue
       validPrompts.forEach(prompt => {
+        // Filter to only characters mentioned in THIS prompt
+        const mentionedCharacters = savedCharacters.filter(char =>
+          prompt.toLowerCase().includes(char.name.toLowerCase())
+        );
+
+        console.log(`[Flow Automation] Prompt: "${prompt}" → Characters: ${mentionedCharacters.map(c => c.name).join(', ')}`);
+
         queueProcessor.addTask({
           type: 'character_video',
           prompt: prompt.trim(),
-          characters: savedCharacters.map(c => ({
+          characters: mentionedCharacters.map(c => ({
             name: c.name,
             image: c.images[0].file || dataURLtoFile(c.images[0].dataURL, `${c.name}.png`)
           }))
