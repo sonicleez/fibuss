@@ -220,6 +220,15 @@
   color: #d1d5db;
 }
 
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #a47bff;
+  margin: 20px 0 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 textarea,
 input[type="text"],
 input[type="number"],

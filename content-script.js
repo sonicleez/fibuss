@@ -72,6 +72,66 @@ function sleep(ms) {
 }
 
 // ========================================
+// GLOBAL STATE & CONFIG
+// ========================================
+let supabaseConfig = {
+  url: '',
+  key: ''
+};
+let isLicenseValid = false;
+let currentLicenseKey = '';
+
+/**
+ * Check license against Supabase
+ * @param {string} licenseKey 
+ */
+async function checkLicense(licenseKey) {
+  if (!supabaseConfig.url || !supabaseConfig.key) {
+    console.error("[Flow Automation] Supabase not configured");
+    return { valid: false, error: "Supabase not configured" };
+  }
+
+  try {
+    const url = `${supabaseConfig.url}/rest/v1/licenses?license_key=eq.${licenseKey}&select=*`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "apikey": supabaseConfig.key,
+        "Authorization": `Bearer ${supabaseConfig.key}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data && data.length > 0) {
+      const license = data[0];
+      if (license.status === 'active') {
+        // Check expiry
+        if (license.expires_at) {
+          const expiry = new Date(license.expires_at);
+          if (expiry < new Date()) {
+            return { valid: false, error: "License expired" };
+          }
+        }
+        return { valid: true, license };
+      } else {
+        return { valid: false, error: `License status: ${license.status}` };
+      }
+    } else {
+      return { valid: false, error: "Invalid license key" };
+    }
+  } catch (error) {
+    console.error("[Flow Automation] License check failed:", error);
+    return { valid: false, error: error.message };
+  }
+}
+
+// ========================================
 // MODE SWITCHING
 // ========================================
 
@@ -1583,6 +1643,7 @@ function createSidebarHTML() {
           <button class="tab" data-tab="start-end">Start→End</button>
           <button class="tab" data-tab="characters">Characters</button>
           <button class="tab" data-tab="queue">Queue</button>
+          <button class="tab" data-tab="settings">⚙️</button>
         </div>
         
         <!-- TEXT TO VIDEO TAB -->
@@ -1663,6 +1724,10 @@ A robot dancing in the rain"></textarea>
               </div>
             </div>
             <div class="image-preview-grid" id="character-preview-grid"></div>
+            
+            <div id="character-name-suggestions" style="display: none; margin-top: 8px; padding: 8px 12px; background: rgba(164, 123, 255, 0.1); border-radius: 6px; font-size: 12px; color: #a47bff;">
+              <strong>💡 Characters:</strong> <span id="character-names-display"></span>
+            </div>
           </div>
           
           <button class="btn-success" id="sidebar-save-character">Save Character</button>
@@ -1672,21 +1737,43 @@ A robot dancing in the rain"></textarea>
             <div class="character-avatar-scroll" id="character-avatar-scroll">
               <!-- Character avatars will be inserted here -->
             </div>
-            <div id="character-name-suggestions" style="display: none; margin-top: 8px; padding: 8px 12px; background: rgba(164, 123, 255, 0.1); border-radius: 6px; font-size: 12px; color: #a47bff;">
-              <strong>💡 Characters:</strong> <span id="character-names-display"></span>
-            </div>
           </div>
           
-          <div class="form-group">
+          <div class="form-group" style="margin-top: 20px;">
             <label>Character Prompt (one per line)</label>
             <textarea id="character-prompt" placeholder="Sarah walking in the park
 Mike playing basketball
 Robot dancing in the rain"></textarea>
             <div id="character-prompt-preview" style="display: none; margin-top: 8px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 6px; font-size: 12px; line-height: 1.6; color: #ffffff; white-space: pre-wrap; word-wrap: break-word;"></div>
-            <div id="character-prompt-validation" style="margin-top: 8px; font-size: 12px;"></div>
+            <div id="character-prompt-validator" style="margin-top: 8px; font-size: 12px;"></div>
           </div>
           
           <button class="btn-primary" id="sidebar-add-character-video">Add to Queue</button>
+        </div>
+
+        <!-- SETTINGS / LICENSE TAB -->
+        <div class="tab-content" id="settings-content" style="display:none;">
+          <div class="section-title">License Authentication</div>
+          <div class="form-group">
+            <label>License Key</label>
+            <input type="text" id="sidebar-license-key" placeholder="Enter your license key">
+            <div id="license-status-msg" style="margin-top: 5px; font-size: 11px;">Status: Checking...</div>
+          </div>
+          <button class="btn-primary" id="sidebar-validate-license">Validate License</button>
+
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(255,255,255,0.1);">
+          
+          <div class="section-title">Supabase Configuration</div>
+          <p style="font-size: 11px; color: #9ca3af; margin-bottom: 10px;">Connect your own license database</p>
+          <div class="form-group">
+            <label>Project URL</label>
+            <input type="text" id="sidebar-supabase-url" placeholder="https://xyz.supabase.co">
+          </div>
+          <div class="form-group">
+            <label>Anon Key</label>
+            <input type="text" id="sidebar-supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+          </div>
+          <button class="btn-secondary" id="sidebar-save-config">Save Config</button>
         </div>
         
         <!-- QUEUE TAB -->
@@ -1814,10 +1901,76 @@ function setupSidebarEvents() {
     });
   });
 
+  // Validate License button
+  const validateLicenseBtn = document.getElementById('sidebar-validate-license');
+  if (validateLicenseBtn) {
+    validateLicenseBtn.addEventListener('click', async () => {
+      const key = document.getElementById('sidebar-license-key')?.value;
+      const statusMsg = document.getElementById('license-status-msg');
+
+      if (!key) {
+        if (statusMsg) {
+          statusMsg.textContent = "Status: Please enter a key";
+          statusMsg.style.color = "#ef4444";
+        }
+        return;
+      }
+
+      if (statusMsg) {
+        statusMsg.textContent = "Status: Verifying...";
+        statusMsg.style.color = "#a47bff";
+      }
+
+      const result = await checkLicense(key);
+      if (result.valid) {
+        isLicenseValid = true;
+        currentLicenseKey = key;
+        if (statusMsg) {
+          statusMsg.textContent = "Status: ACTIVE ✅";
+          statusMsg.style.color = "#10b981";
+        }
+        chrome.storage.local.set({ flowLicenseKey: key });
+      } else {
+        isLicenseValid = false;
+        if (statusMsg) {
+          statusMsg.textContent = `Status: INVALID ❌ (${result.error})`;
+          statusMsg.style.color = "#ef4444";
+        }
+      }
+    });
+  }
+
+  // Save Config button (Supabase)
+  const saveConfigBtn = document.getElementById('sidebar-save-config');
+  if (saveConfigBtn) {
+    saveConfigBtn.addEventListener('click', () => {
+      const url = document.getElementById('sidebar-supabase-url')?.value;
+      const key = document.getElementById('sidebar-supabase-key')?.value;
+
+      supabaseConfig.url = url;
+      supabaseConfig.key = key;
+
+      chrome.storage.local.set({ flowSupabaseConfig: supabaseConfig }, () => {
+        const originalText = saveConfigBtn.textContent;
+        saveConfigBtn.textContent = '✅ Config Saved!';
+        saveConfigBtn.style.background = 'rgba(16, 185, 129, 0.2)';
+        setTimeout(() => {
+          saveConfigBtn.textContent = originalText;
+          saveConfigBtn.style.background = '';
+        }, 2000);
+      });
+    });
+  }
+
   // Add to queue button - Text to Video
   const addTextQueueBtn = document.getElementById('sidebar-add-text-queue');
   if (addTextQueueBtn) {
     addTextQueueBtn.addEventListener('click', () => {
+      if (!isLicenseValid) {
+        alert("🔒 License required! Please enter a valid license key in Settings ⚙️");
+        document.querySelector('.tab[data-tab="settings"]').click();
+        return;
+      }
       const promptsText = document.getElementById('sidebar-text-prompts')?.value || '';
       const prompts = promptsText.split('\n').filter(p => p.trim());
 
@@ -1854,6 +2007,11 @@ function setupSidebarEvents() {
   const addCharacterVideoBtn = document.getElementById('sidebar-add-character-video');
   if (addCharacterVideoBtn) {
     addCharacterVideoBtn.addEventListener('click', () => {
+      if (!isLicenseValid) {
+        alert("🔒 License required! Please enter a valid license key in Settings ⚙️");
+        document.querySelector('.tab[data-tab="settings"]').click();
+        return;
+      }
       const promptsText = document.getElementById('character-prompt')?.value || '';
       const prompts = promptsText.split('\n').filter(p => p.trim());
 
@@ -1924,6 +2082,11 @@ function setupSidebarEvents() {
   const addImageBatchBtn = document.getElementById('sidebar-add-image-batch');
   if (addImageBatchBtn) {
     addImageBatchBtn.addEventListener('click', () => {
+      if (!isLicenseValid) {
+        alert("🔒 License required! Please enter a valid license key in Settings ⚙️");
+        document.querySelector('.tab[data-tab="settings"]').click();
+        return;
+      }
       if (batchImages.length === 0) {
         alert('Please upload at least one image');
         return;
@@ -2060,7 +2223,27 @@ function setupSidebarEvents() {
 
 // Load settings from chrome storage
 function loadSettings() {
-  chrome.storage.local.get(['flowAutomationSettings'], (result) => {
+  chrome.storage.local.get(['flowAutomationSettings', 'flowLicenseKey', 'flowSupabaseConfig'], (result) => {
+    // Load Supabase Config
+    if (result.flowSupabaseConfig) {
+      supabaseConfig = result.flowSupabaseConfig;
+      const urlInput = document.getElementById('sidebar-supabase-url');
+      const keyInput = document.getElementById('sidebar-supabase-key');
+      if (urlInput) urlInput.value = supabaseConfig.url || '';
+      if (keyInput) keyInput.value = supabaseConfig.key || '';
+    }
+
+    // Load License Key
+    if (result.flowLicenseKey) {
+      const licenseInput = document.getElementById('sidebar-license-key');
+      if (licenseInput) {
+        licenseInput.value = result.flowLicenseKey;
+        // Auto-validate
+        const validateBtn = document.getElementById('sidebar-validate-license');
+        if (validateBtn) setTimeout(() => validateBtn.click(), 500);
+      }
+    }
+
     const settings = result.flowAutomationSettings || {};
 
     // Load delay range
@@ -2351,6 +2534,11 @@ function setupStartEndFrames() {
   const addPairedBtn = document.getElementById('sidebar-add-paired-queue');
   if (addPairedBtn) {
     addPairedBtn.addEventListener('click', () => {
+      if (!isLicenseValid) {
+        alert("🔒 License required! Please enter a valid license key in Settings ⚙️");
+        document.querySelector('.tab[data-tab="settings"]').click();
+        return;
+      }
       if (pairedItems.length === 0) {
         alert('Please upload both START and END frames');
         return;
