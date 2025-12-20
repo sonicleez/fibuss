@@ -19,7 +19,16 @@
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+}
+
+/* Page Layout Pushing */
+html {
+  transition: margin 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#preact-border-shadow-host {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #flow-automation-sidebar.collapsed {
@@ -93,12 +102,13 @@
   color: #a47bff;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
-.sidebar-header h2::before {
-  content: '🎬';
-  font-size: 20px;
+.sidebar-logo {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
 }
 
 .toggle-btn {
@@ -340,6 +350,7 @@ button:disabled {
    ======================================== */
 
 .upload-zone {
+  position: relative;
   border: 2px dashed rgba(164, 123, 255, 0.3);
   border-radius: 8px;
   padding: 24px;
@@ -348,6 +359,7 @@ button:disabled {
   cursor: pointer;
   transition: all 0.2s;
   margin-bottom: 16px;
+  overflow: hidden;
 }
 
 .upload-zone:hover {
@@ -356,7 +368,14 @@ button:disabled {
 }
 
 .upload-zone input[type="file"] {
-  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
 }
 
 .upload-zone-text {
@@ -385,9 +404,10 @@ button:disabled {
 .image-preview-item {
   position: relative;
   background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
-  aspect-ratio: 1;
+  width: 50px;
+  height: 50px;
 }
 
 .image-preview-item img {
@@ -551,11 +571,11 @@ button:disabled {
    ======================================== */
 
 .paired-list-container {
-  max-height: 500px;
+  max-height: 400px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -981,9 +1001,9 @@ button:disabled {
 }
 
 .image-list-thumbnail {
-  width: 80px;
-  height: 80px;
-  border-radius: 6px;
+  width: 45px;
+  height: 45px;
+  border-radius: 4px;
   object-fit: cover;
   background: rgba(0, 0, 0, 0.3);
   flex-shrink: 0;
@@ -1010,14 +1030,14 @@ button:disabled {
 }
 
 .image-list-remove {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
   border: none;
   cursor: pointer;
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
   transition: all 0.2s;
   flex-shrink: 0;
@@ -1030,14 +1050,114 @@ button:disabled {
 
 .image-list-prompt {
   width: 100%;
-  min-height: 60px;
+  min-height: 36px;
   resize: vertical;
+  padding: 6px;
+  font-size: 11px;
+}
+
+.prompt-list-container {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+}
+
+.prompt-list-item {
+  background: rgba(164, 123, 255, 0.03);
+  border: 1px solid rgba(164, 123, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.prompt-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.prompt-item-number {
+  font-size: 10px;
+  font-weight: 700;
+  color: #a47bff;
+  text-transform: uppercase;
+}
+
+.prompt-item-remove {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+.prompt-item-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  color: #e5e5e5;
+  font-size: 13px;
+  padding: 8px;
+  min-height: 40px;
+  resize: vertical;
+}
+
+.prompt-item-input:focus {
+  border-color: #a47bff;
+  outline: none;
+}
+
+/* ========================================
+   SORT CONTROLS
+   ======================================== */
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(164, 123, 255, 0.05);
+  border: 1px solid rgba(164, 123, 255, 0.1);
+  border-radius: 6px;
+}
+
+.sort-controls label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #a47bff;
+  white-space: nowrap;
+}
+
+.sort-controls select {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #e5e5e5;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.sort-controls select:focus {
+  border-color: #a47bff;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 /* ========================================
    PAIRED PREVIEW CONTAINER (Start→End)
    ======================================== */
 
+/* Consolidating to .paired-item in next section */
 .paired-preview-container {
   max-height: 400px;
   overflow-y: auto;
@@ -1049,14 +1169,14 @@ button:disabled {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(164, 123, 255, 0.15);
   border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 8px;
+  margin-bottom: 8px;
 }
 
 .paired-item-header {
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1068,14 +1188,14 @@ button:disabled {
 }
 
 .paired-item-remove {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   transition: all 0.2s;
 }
 
@@ -1086,29 +1206,30 @@ button:disabled {
 .paired-item-images {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .paired-item-image {
   width: 100%;
-  aspect-ratio: 1;
-  border-radius: 6px;
+  aspect-ratio: 16/9;
+  border-radius: 4px;
   object-fit: cover;
   background: rgba(0, 0, 0, 0.3);
 }
 
 .paired-item-arrow {
-  font-size: 24px;
+  font-size: 16px;
   color: #a47bff;
 }
 
 .paired-item-prompt {
   width: 100%;
-  min-height: 50px;
+  min-height: 30px;
   resize: vertical;
-  font-size: 12px;
+  font-size: 11px;
+  padding: 4px;
 }
 
 /* ========================================
@@ -1181,4 +1302,76 @@ button:disabled {
 .tab {
   padding: 8px 6px;
   font-size: 11px;
+}
+/* ========================================
+   CHARACTER AVATAR LIST (Saved)
+   ======================================== */
+
+.character-avatar-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.character-avatar-item {
+  position: relative;
+  width: 60px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.character-avatar-image {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #a47bff;
+  background: #000;
+  transition: all 0.2s;
+}
+
+.character-avatar-item:hover .character-avatar-image {
+  transform: scale(1.1);
+  box-shadow: 0 0 10px rgba(164, 123, 255, 0.5);
+}
+
+.character-avatar-name {
+  font-size: 10px;
+  color: #e5e5e5;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.character-avatar-delete {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  border: 2px solid #1a1a28;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: all 0.2s;
+}
+
+.character-avatar-delete:hover {
+  background: #dc2626;
+  transform: scale(1.2);
 }

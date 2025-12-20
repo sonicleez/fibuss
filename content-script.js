@@ -215,34 +215,66 @@ async function checkLicense(licenseKey, forceRegisterMachine = false) {
 // ========================================
 
 /**
- * Switch to a specific mode
- * @param {string} modeName - "Từ văn bản sang video" | "Tạo video từ các khung hình" | "Tạo hình ảnh"
+ * Enhanced mode switcher with fallback for Vietnamese character encoding issues
+ * @param {string} modeIdentifier - Text to match or "text-video", "image-video", "frame-video", "image-gen"
  */
-async function switchMode(modeName) {
-  console.log(`[Flow Automation] Switching to mode: ${modeName}`);
+async function switchMode(modeIdentifier) {
+  console.log(`[Flow Automation] Attempting to switch mode: ${modeIdentifier}`);
 
-  // Click mode dropdown
-  const dropdown = getElementByXPath('//button[@role="combobox"]');
+  // Mapping of common IDs to actual UI text/indices
+  const modeMap = {
+    'text-video': { text: 'Từ văn bản sang video', index: 1 },
+    'image-video': { text: 'Tạo video từ các khung hình', index: 2 }, // Also known as image-to-video
+    'frame-video': { text: 'Tạo video từ các khung hình', index: 2 },
+    'components-video': { text: 'Tạo video từ các thành phần', index: 3 },
+    'image-gen': { text: 'Tạo hình ảnh', index: 4 }
+  };
+
+  const target = modeMap[modeIdentifier] || { text: modeIdentifier, index: null };
+
+  // 1. Find and click dropdown
+  // Use a more robust selector than absolute XPath
+  let dropdown = getElementByXPath('//button[@role="combobox"]');
   if (!dropdown) {
-    throw new Error("Mode dropdown not found");
+    // Last ditch effort absolute XPath
+    dropdown = getElementByXPath('//*[@id="__next"]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/div/div[1]/div[1]/button');
   }
+
+  if (!dropdown) {
+    throw new Error("Mode dropdown button not found");
+  }
+
   dropdown.click();
+  await sleep(600);
 
-  // Wait a bit for dropdown to open
-  await sleep(500);
+  // 2. Select the option
+  let option = null;
 
-  // Select mode
-  const option = getElementByXPath(
-    `//div[@role="option" and contains(., "${modeName}")]`
-  );
-  if (!option) {
-    throw new Error(`Mode option not found: ${modeName}`);
+  // Try by text first (contains)
+  option = getElementByXPath(`//div[@role="option" and (contains(., "${target.text}") or contains(normalize-space(), "${target.text}"))]`);
+
+  // If not found and we have an index, try by index
+  if (!option && target.index !== null) {
+    console.log(`[Flow Automation] text match failed for "${target.text}", trying index ${target.index}`);
+    option = getElementByXPath(`(//div[@role="option"])[${target.index}]`);
   }
-  option.click();
 
-  // Wait longer for UI to fully load after mode change
+  if (!option) {
+    // If it's still not found, maybe the dropdown didn't open? Try clicking again.
+    dropdown.click();
+    await sleep(500);
+    option = getElementByXPath(`(//div[@role="option"])[${target.index || 1}]`);
+  }
+
+  if (!option) {
+    throw new Error(`Could not find mode option: ${modeIdentifier}`);
+  }
+
+  option.click();
+  console.log(`[Flow Automation] Successfully switched to: ${modeIdentifier}`);
+
+  // Wait for UI to transition
   await sleep(1500);
-  console.log(`[Flow Automation] Switched to: ${modeName}`);
 }
 
 // ========================================
@@ -327,25 +359,14 @@ async function clickCreate() {
  * Text to Video workflow - UPDATED with exact XPaths from user
  */
 async function textToVideo(promptText) {
-  console.log(`[Flow Automation] Starting Text to Video for: ${promptText}`);
+  console.log(`[Flow Automation] Starting Text to Video workflow`);
 
-  // Step 1: Click Text to Video mode selector
-  // XPath: //*[@id="__next"]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/div/div[1]/div[1]/button
-  const modeBtn = getElementByXPath('//*[@id="__next"]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/div/div[1]/div[1]/button');
-  if (modeBtn) {
-    modeBtn.click();
-    console.log(`[Flow Automation] Mode button clicked`);
-    await sleep(500);
-
-    // Select "Từ văn bản sang video" option
-    const option = getElementByXPath('//div[@role="option" and contains(., "Từ văn bản sang video")]');
-    if (option) {
-      option.click();
-      console.log(`[Flow Automation] Text to Video mode selected`);
-    }
-    await sleep(1000);
-  } else {
-    console.log(`[Flow Automation] Mode already set or button not found, continuing...`);
+  // Step 1: Switch to the correct mode
+  try {
+    await switchMode('text-video');
+  } catch (error) {
+    console.error(`[Flow Automation] Failed to switch to Text to Video:`, error);
+    // Continue anyway as it might already be selected
   }
 
   // Step 2: Fill prompt
@@ -406,19 +427,10 @@ async function imageToVideo(imageFile, endImageFile = null, promptText = "") {
   // STEP 1: Chọn Image to Video mode
   // ============================================
   console.log(`[Flow Automation] Step 1: Selecting Image to Video mode...`);
-  const modeBtn = getElementByXPath('//*[@id="__next"]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/div/div[1]/div[1]/button');
-  if (modeBtn) {
-    modeBtn.click();
-    await sleep(500);
-
-    const option = getElementByXPath('//div[@role="option" and contains(., "Tạo video từ các khung hình")]');
-    if (option) {
-      option.click();
-      console.log(`[Flow Automation] ✓ Step 1 complete: Mode selected`);
-    }
-    await sleep(1000);
-  } else {
-    console.log(`[Flow Automation] Mode already set, continuing...`);
+  try {
+    await switchMode('image-video');
+  } catch (error) {
+    console.error(`[Flow Automation] Failed to switch to Image to Video:`, error);
   }
 
   // ============================================
@@ -1804,7 +1816,7 @@ function createSidebarHTML() {
       <div class="sidebar-resize-handle"></div>
       <div class="sidebar-header">
         <button class="toggle-btn" id="sidebar-toggle">»</button>
-        <h2>Flow Automation</h2>
+        <h2><img src="${chrome.runtime.getURL('logo.png')}" class="sidebar-logo"> Flow Automation</h2>
       </div>
       
       <div class="sidebar-body">
@@ -1820,13 +1832,15 @@ function createSidebarHTML() {
         <!-- TEXT TO VIDEO TAB -->
         <div class="tab-content active" id="text-video-content">
           <div class="form-group">
-            <label>Enter Prompts (one per line)</label>
-            <textarea id="sidebar-text-prompts" placeholder="A sunset over the ocean
-A cat playing in the garden
-A robot dancing in the rain"></textarea>
-            <div id="text-prompt-counter" style="text-align: right; font-size: 12px; color: #a47bff; margin-top: 4px;">0 prompts</div>
+            <label>Add Prompts (Double Enter to separate)</label>
+            <textarea id="text-prompt-input" placeholder="Paste your prompts here...
+Use blank lines to separate multiple prompts."></textarea>
           </div>
-          <button class="btn-primary" id="sidebar-add-text-queue">Add to Queue</button>
+          <div id="text-prompt-list" class="prompt-list-container"></div>
+          <div class="button-group" style="display: flex; gap: 8px;">
+            <button class="btn-primary" id="sidebar-add-text-queue" style="flex: 2;">Add All to Queue</button>
+            <button class="btn-danger" id="sidebar-clear-text-prompts" style="flex: 1;">Clear All</button>
+          </div>
         </div>
         
         <!-- IMAGE TO VIDEO TAB - Batch single images with individual prompts -->
@@ -1842,9 +1856,22 @@ A robot dancing in the rain"></textarea>
             </div>
           </div>
           
+          <div class="sort-controls" id="image-sort-controls" style="display:none;">
+            <label>Sort:</label>
+            <select id="image-sort-select">
+              <option value="name-asc">A-Z (Numeric)</option>
+              <option value="name-desc">Z-A (Numeric)</option>
+              <option value="date-new">Newest First</option>
+              <option value="date-old">Oldest First</option>
+            </select>
+          </div>
+          
           <div id="image-list-container" class="image-list-container"></div>
           
-          <button class="btn-primary" id="sidebar-add-image-batch">📤 Add All to Queue</button>
+          <div class="button-group" style="display: flex; gap: 8px;">
+            <button class="btn-primary" id="sidebar-add-image-batch" style="flex: 2;">📤 Add All to Queue</button>
+            <button class="btn-danger" id="sidebar-clear-image-batch" style="flex: 1;">Clear</button>
+          </div>
         </div>
         
         <!-- START TO END VIDEO TAB - Paired start/end frames -->
@@ -1871,11 +1898,22 @@ A robot dancing in the rain"></textarea>
             </div>
           </div>
           
+          <div class="sort-controls" id="paired-sort-controls" style="display:none;">
+            <label>Sort Pairs:</label>
+            <select id="paired-sort-select">
+              <option value="name-asc">A-Z (Numeric)</option>
+              <option value="name-desc">Z-A (Numeric)</option>
+            </select>
+          </div>
+
           <div id="paired-list-container" class="paired-list-container">
             <!-- Paired items will be inserted here -->
           </div>
           
-          <button class="btn-primary" id="sidebar-add-paired-queue">📤 Add All Pairs to Queue</button>
+          <div class="button-group" style="display: flex; gap: 8px;">
+            <button class="btn-primary" id="sidebar-add-paired-queue" style="flex: 2;">📤 Add All Pairs to Queue</button>
+            <button class="btn-danger" id="sidebar-clear-paired-batch" style="flex: 1;">Clear</button>
+          </div>
         </div>
         
         <!-- CHARACTERS TAB -->
@@ -1901,7 +1939,10 @@ A robot dancing in the rain"></textarea>
             </div>
           </div>
           
-          <button class="btn-success" id="sidebar-save-character">Save Character</button>
+          <div class="button-group" style="display: flex; gap: 8px;">
+            <button class="btn-success" id="sidebar-save-character" style="flex: 2;">Save Character</button>
+            <button class="btn-danger" id="sidebar-clear-saved-characters" style="flex: 1;">Clear All</button>
+          </div>
           
           <div id="character-suggestions" style="display: none; margin-top: 15px; padding: 10px; background: rgba(164, 123, 255, 0.1); border-radius: 8px; border: 1px solid rgba(164, 123, 255, 0.2);">
             <div style="font-size: 11px; color: #a47bff; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">✨ Recognized Characters:</div>
@@ -2038,6 +2079,86 @@ function injectSidebar() {
 
   // Setup event listeners
   setupSidebarEvents();
+
+  // Initial layout push
+  setTimeout(updateBodyLayout, 500);
+}
+
+/**
+ * Update the page layout by adding margins to accommodate the sidebar
+ */
+function updateBodyLayout() {
+  const sidebar = document.getElementById('flow-automation-sidebar');
+  if (!sidebar) return;
+
+  const positionSelect = document.getElementById('sidebar-position');
+  const position = positionSelect ? positionSelect.value : 'right';
+  const isCollapsed = sidebar.classList.contains('collapsed');
+  const width = isCollapsed ? 50 : parseInt(getComputedStyle(sidebar).width, 10);
+
+  // 1. Reset all margins and positions first
+  document.documentElement.style.marginLeft = '0px';
+  document.documentElement.style.marginRight = '0px';
+
+  // Specific fix for Google Labs fixed frame elements
+  const fixedHosts = document.querySelectorAll('#preact-border-shadow-host');
+  fixedHosts.forEach(host => {
+    host.style.left = '0px';
+    host.style.right = '0px';
+    host.style.width = '100%';
+  });
+
+  // 2. Apply new layout based on position
+  if (position === 'left') {
+    document.documentElement.style.marginLeft = `${width}px`;
+    fixedHosts.forEach(host => {
+      host.style.left = `${width}px`;
+      host.style.width = `calc(100% - ${width}px)`;
+    });
+  } else {
+    document.documentElement.style.marginRight = `${width}px`;
+    fixedHosts.forEach(host => {
+      host.style.right = `${width}px`;
+      host.style.width = `calc(100% - ${width}px)`;
+    });
+  }
+}
+
+let textToVideoPrompts = [];
+
+function renderTextPromptList() {
+  const container = document.getElementById('text-prompt-list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  textToVideoPrompts.forEach((prompt, index) => {
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'prompt-list-item';
+    itemDiv.dataset.index = index;
+
+    itemDiv.innerHTML = `
+      <div class="prompt-item-header">
+        <span class="prompt-item-number">Prompt ${index + 1}</span>
+        <button class="prompt-item-remove" data-index="${index}">×</button>
+      </div>
+      <textarea class="prompt-item-input" data-index="${index}">${prompt}</textarea>
+    `;
+
+    container.appendChild(itemDiv);
+
+    // Remove button handler
+    itemDiv.querySelector('.prompt-item-remove').addEventListener('click', () => {
+      textToVideoPrompts.splice(index, 1);
+      renderTextPromptList();
+    });
+
+    // Edit handler
+    const input = itemDiv.querySelector('.prompt-item-input');
+    input.addEventListener('input', (e) => {
+      textToVideoPrompts[index] = e.target.value;
+    });
+  });
 }
 
 function setupSidebarEvents() {
@@ -2051,6 +2172,9 @@ function setupSidebarEvents() {
       // Change icon: ⇄ is default, » when expanded (to collapse), « when collapsed (to expand)
       toggleBtn.textContent = sidebar.classList.contains('collapsed') ? '«' : '»';
       console.log(`[Sidebar] Toggled: ${sidebar.classList.contains('collapsed') ? 'Collapsed' : 'Expanded'}`);
+
+      // Update body layout
+      updateBodyLayout();
     });
   }
 
@@ -2143,37 +2267,122 @@ function setupSidebarEvents() {
         document.querySelector('.tab[data-tab="settings"]').click();
         return;
       }
-      const promptsText = document.getElementById('sidebar-text-prompts')?.value || '';
-      const prompts = promptsText.split('\n').filter(p => p.trim());
 
-      if (prompts.length === 0) {
-        alert('Please enter at least one prompt');
+      if (textToVideoPrompts.length === 0) {
+        alert('Please add at least one prompt');
         return;
       }
 
-      prompts.forEach(prompt => {
+      textToVideoPrompts.forEach(prompt => {
         queueProcessor.addTask({
           type: 'text_to_video',
           prompt: prompt.trim()
         });
       });
 
+      // Clear
+      textToVideoPrompts = [];
+      renderTextPromptList();
+      const textInput = document.getElementById('text-prompt-input');
+      if (textInput) textInput.value = '';
+
       updateQueueDisplay();
       document.querySelector('.tab[data-tab="queue"]').click();
     });
   }
 
-  // Text prompts counter - update live as user types
-  const textPromptsArea = document.getElementById('sidebar-text-prompts');
-  const textPromptCounter = document.getElementById('text-prompt-counter');
-  if (textPromptsArea && textPromptCounter) {
-    const updateTextCounter = () => {
-      const prompts = textPromptsArea.value.split('\n').filter(p => p.trim());
-      textPromptCounter.textContent = `${prompts.length} prompt${prompts.length !== 1 ? 's' : ''}`;
-    };
-    textPromptsArea.addEventListener('input', updateTextCounter);
-    updateTextCounter(); // Initial count
+  // Clear All button - Text to Video
+  const clearTextPromptsBtn = document.getElementById('sidebar-clear-text-prompts');
+  if (clearTextPromptsBtn) {
+    clearTextPromptsBtn.addEventListener('click', () => {
+      if (textToVideoPrompts.length === 0) return;
+
+      if (confirm('Are you sure you want to clear all text prompts?')) {
+        textToVideoPrompts = [];
+        renderTextPromptList();
+        const textInput = document.getElementById('text-prompt-input');
+        if (textInput) textInput.value = '';
+      }
+    });
   }
+
+  // Text prompts entry logic
+  const textPromptInput = document.getElementById('text-prompt-input');
+  if (textPromptInput) {
+    textPromptInput.addEventListener('input', (e) => {
+      const text = e.target.value;
+      // Split by blank lines (double newline)
+      const segments = text.split(/\n\s*\n/).filter(s => s.trim());
+
+      if (segments.length > 1) {
+        // If multiple segments, add them to the list and clear the input
+        segments.forEach(seg => {
+          textToVideoPrompts.push(seg.trim());
+        });
+        e.target.value = '';
+        renderTextPromptList();
+      }
+    });
+
+    // Also handle direct entry of last prompt if user leaves it there
+    textPromptInput.addEventListener('blur', (e) => {
+      if (e.target.value.trim()) {
+        textToVideoPrompts.push(e.target.value.trim());
+        e.target.value = '';
+        renderTextPromptList();
+      }
+    });
+  }
+
+  // Clear button - Image to Video
+  const clearImageBatchBtn = document.getElementById('sidebar-clear-image-batch');
+  if (clearImageBatchBtn) {
+    clearImageBatchBtn.addEventListener('click', () => {
+      if (batchImages.length === 0) return;
+      if (confirm('Clear all uploaded images?')) {
+        batchImages = [];
+        renderBatchImageList();
+      }
+    });
+  }
+
+  // Clear button - Start to End
+  const clearPairedBatchBtn = document.getElementById('sidebar-clear-paired-batch');
+  if (clearPairedBatchBtn) {
+    clearPairedBatchBtn.addEventListener('click', () => {
+      if (pairedItems.length === 0) return;
+      if (confirm('Clear all paired frames?')) {
+        startFrames = [];
+        endFrames = [];
+        pairedItems = [];
+        renderPairedList();
+      }
+    });
+  }
+
+  // Clear All button - Characters
+  const clearSavedCharsBtn = document.getElementById('sidebar-clear-saved-characters');
+  if (clearSavedCharsBtn) {
+    clearSavedCharsBtn.addEventListener('click', () => {
+      if (savedCharacters.length === 0) {
+        // Just clear the inputs
+        document.getElementById('character-name-input').value = '';
+        document.getElementById('character-preview-grid').innerHTML = '';
+        return;
+      }
+
+      if (confirm('Remove all saved characters?')) {
+        savedCharacters = [];
+        chrome.storage.local.set({ flowCharacters: [] }, () => {
+          updateCharacterList();
+        });
+        document.getElementById('character-name-input').value = '';
+        document.getElementById('character-preview-grid').innerHTML = '';
+      }
+    });
+  }
+
+
 
   // Add to queue button - Character Video
   const addCharacterVideoBtn = document.getElementById('sidebar-add-character-video');
@@ -2250,51 +2459,8 @@ function setupSidebarEvents() {
     });
   }
 
-  // Add to queue button - Image→Video Batch
-  const addImageBatchBtn = document.getElementById('sidebar-add-image-batch');
-  if (addImageBatchBtn) {
-    addImageBatchBtn.addEventListener('click', () => {
-      if (!isLicenseValid) {
-        alert("🔒 License required! Please enter a valid license key in Settings ⚙️");
-        document.querySelector('.tab[data-tab="settings"]').click();
-        return;
-      }
-      if (batchImages.length === 0) {
-        alert('Please upload at least one image');
-        return;
-      }
-
-      // Validate all images have prompts
-      const missingPrompts = [];
-      batchImages.forEach((imgData, i) => {
-        if (!imgData.prompt || !imgData.prompt.trim()) {
-          missingPrompts.push(i + 1);
-        }
-      });
-
-      if (missingPrompts.length > 0) {
-        alert(`⚠️ Please enter prompts for all images!\n\nMissing prompts for image(s): ${missingPrompts.join(', ')}`);
-        return;
-      }
-
-      // Add each image with its prompt to queue
-      batchImages.forEach((imgData, i) => {
-        queueProcessor.addTask({
-          type: 'image_to_video',
-          image: imgData.file,
-          prompt: imgData.prompt.trim()
-        });
-      });
-
-      // Clear batch images
-      batchImages = [];
-      document.getElementById('image-list-container').innerHTML = '';
-      document.getElementById('image-file-input').value = '';
-
-      updateQueueDisplay();
-      document.querySelector('.tab[data-tab="queue"]').click();
-    });
-  }
+  // Duplicate logic for sidebar-add-image-batch removed. 
+  // It is now handled centrally in setupBatchImageUpload() to avoid conflicts.
 
   // Start queue button
   const startQueueBtn = document.getElementById('sidebar-start-queue');
@@ -2385,6 +2551,9 @@ function setupSidebarEvents() {
       }
 
       console.log(`[Flow Automation] Position changed to: ${position}`);
+
+      // Update body layout
+      updateBodyLayout();
     });
   }
 
@@ -2401,6 +2570,11 @@ function setupSidebarEvents() {
       resizer.classList.add('resizing');
       document.body.style.cursor = 'ew-resize';
       document.body.style.userSelect = 'none';
+
+      // Disable transition during real-time dragging for performance/smoothness
+      document.documentElement.style.transition = 'none';
+      const fixedHosts = document.querySelectorAll('#preact-border-shadow-host');
+      fixedHosts.forEach(host => host.style.transition = 'none');
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -2417,6 +2591,8 @@ function setupSidebarEvents() {
 
       if (newWidth >= 300 && newWidth <= 800) {
         sidebar.style.width = `${newWidth}px`;
+        // Sync body margin in real-time
+        updateBodyLayout();
       }
     });
 
@@ -2427,21 +2603,20 @@ function setupSidebarEvents() {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
 
+      // Re-enable transitions
+      document.documentElement.style.transition = '';
+      const fixedHosts = document.querySelectorAll('#preact-border-shadow-host');
+      fixedHosts.forEach(host => host.style.transition = '');
+
       // Save width to settings
       const settings = JSON.parse(localStorage.getItem('flowAutomationSettings') || '{}');
       settings.width = sidebar.style.width;
       localStorage.setItem('flowAutomationSettings', JSON.stringify(settings));
     });
   }
-
-  // Load saved settings on init
-  loadSettings();
-
-  // Image upload handlers
-  setupBatchImageUpload();
-  setupStartEndFrames();
-  setupCharacterManagement();
 }
+
+// Setup functions are now called after sidebar injection in the INITIALIZE section at the bottom of this file.
 
 // Load settings from chrome storage
 function loadSettings() {
@@ -2554,6 +2729,9 @@ function loadSettings() {
     }
 
     console.log('[Flow Automation] Settings loaded:', settings);
+
+    // Update layout after settings are loaded
+    setTimeout(updateBodyLayout, 100);
   });
 }
 
@@ -2570,8 +2748,8 @@ function setupBatchImageUpload() {
 
   if (!uploadZone || !fileInput || !listContainer) return;
 
-  // Click zone to trigger file input
-  uploadZone.addEventListener('click', () => fileInput.click());
+  // No longer need manual click trigger as input overlays the zone
+  // uploadZone.addEventListener('click', () => fileInput.click());
 
   // Handle file selection
   fileInput.addEventListener('change', (e) => {
@@ -2589,10 +2767,17 @@ function setupBatchImageUpload() {
     uploadZone.style.borderColor = '';
   });
 
-  uploadZone.addEventListener('drop', (e) => {
+  uploadZone.addEventListener('drop', async (e) => {
     e.preventDefault();
     uploadZone.style.borderColor = '';
-    const files = Array.from(e.dataTransfer.files);
+
+    let files;
+    if (e.dataTransfer.items) {
+      files = await scanFilesRecursively(e.dataTransfer.items);
+    } else {
+      files = Array.from(e.dataTransfer.files);
+    }
+
     handleBatchImageUpload(files);
   });
 
@@ -2623,102 +2808,132 @@ function setupBatchImageUpload() {
       document.querySelector('.tab[data-tab="queue"]').click();
     });
   }
+
+  // Setup sorting events
+  const sortSelect = document.getElementById('image-sort-select');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', () => {
+      sortBatchImages(sortSelect.value);
+      renderBatchImageList();
+    });
+  }
 }
 
 function handleBatchImageUpload(files) {
   if (!files || files.length === 0) return;
 
+  // Initial sort numerically by name
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
   const listContainer = document.getElementById('image-list-container');
+  const sortControls = document.getElementById('image-sort-controls');
   if (!listContainer) return;
 
-  files.forEach((file, index) => {
+  if (sortControls) sortControls.style.display = 'flex';
+
+  let loadedCount = 0;
+  files.forEach((file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const imageData = {
+      batchImages.push({
         file,
         dataURL: e.target.result,
-        prompt: ''
-      };
-
-      batchImages.push(imageData);
-      const imageIndex = batchImages.length - 1;
-
-      // Create list item
-      const itemDiv = document.createElement('div');
-      itemDiv.className = 'image-list-item';
-      itemDiv.dataset.index = imageIndex;
-
-      const sizeKB = (file.size / 1024).toFixed(1);
-
-      itemDiv.innerHTML = `
-        <div class="image-list-header">
-          <img class="image-list-thumbnail" src="${e.target.result}" alt="${file.name}">
-          <div class="image-list-info">
-            <div class="image-list-filename">${file.name}</div>
-            <div class="image-list-size">${sizeKB} KB</div>
-          </div>
-          <button class="image-list-remove" data-index="${imageIndex}">×</button>
-        </div>
-        <textarea class="image-list-prompt" placeholder="Enter prompt for this image..." data-index="${imageIndex}"></textarea>
-      `;
-
-      listContainer.appendChild(itemDiv);
-
-      // Remove button handler
-      itemDiv.querySelector('.image-list-remove').addEventListener('click', () => {
-        const idx = parseInt(itemDiv.dataset.index);
-        batchImages.splice(idx, 1);
-        itemDiv.remove();
-        // Re-index remaining items
-        updateBatchImageIndices();
+        prompt: '',
+        lastModified: file.lastModified || Date.now()
       });
 
-      // Prompt change handler
-      const promptTextarea = itemDiv.querySelector('.image-list-prompt');
-      promptTextarea.addEventListener('input', (e) => {
-        const idx = parseInt(e.target.dataset.index);
-        if (batchImages[idx]) {
-          batchImages[idx].prompt = e.target.value;
-        }
-      });
-
-      // Auto-fill prompts when pasting multi-line text in first prompt
-      if (imageIndex === 0) {
-        promptTextarea.addEventListener('paste', (e) => {
-          setTimeout(() => {
-            const text = e.target.value;
-            const lines = text.split('\n').filter(l => l.trim());
-
-            // If multiple lines pasted, distribute to other prompts
-            if (lines.length > 1) {
-              const allPromptTextareas = listContainer.querySelectorAll('.image-list-prompt');
-              lines.forEach((line, i) => {
-                if (allPromptTextareas[i]) {
-                  allPromptTextareas[i].value = line.trim();
-                  const idx = parseInt(allPromptTextareas[i].dataset.index);
-                  if (batchImages[idx]) {
-                    batchImages[idx].prompt = line.trim();
-                  }
-                }
-              });
-            }
-          }, 10);
-        });
+      loadedCount++;
+      if (loadedCount === files.length) {
+        // Render the full list once all are loaded
+        renderBatchImageList();
       }
     };
     reader.readAsDataURL(file);
   });
 }
 
-function updateBatchImageIndices() {
+function renderBatchImageList() {
   const listContainer = document.getElementById('image-list-container');
-  const items = listContainer.querySelectorAll('.image-list-item');
-  items.forEach((item, newIndex) => {
-    item.dataset.index = newIndex;
-    item.querySelector('.image-list-remove').dataset.index = newIndex;
-    item.querySelector('.image-list-prompt').dataset.index = newIndex;
+  if (!listContainer) return;
+
+  listContainer.innerHTML = '';
+
+  batchImages.forEach((img, index) => {
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'image-list-item';
+    itemDiv.dataset.index = index;
+
+    const sizeKB = (img.file.size / 1024).toFixed(1);
+
+    itemDiv.innerHTML = `
+      <div class="image-list-header">
+        <img class="image-list-thumbnail" src="${img.dataURL}" alt="${img.file.name}">
+        <div class="image-list-info">
+          <div class="image-list-filename">${img.file.name}</div>
+          <div class="image-list-size">${sizeKB} KB</div>
+        </div>
+        <button class="image-list-remove" data-index="${index}">×</button>
+      </div>
+      <textarea class="image-list-prompt" placeholder="Enter prompt for this image..." data-index="${index}">${img.prompt || ''}</textarea>
+    `;
+
+    listContainer.appendChild(itemDiv);
+
+    // Remove button handler
+    itemDiv.querySelector('.image-list-remove').addEventListener('click', () => {
+      batchImages.splice(index, 1);
+      renderBatchImageList();
+    });
+
+    // Prompt change handler
+    const promptTextarea = itemDiv.querySelector('.image-list-prompt');
+    promptTextarea.addEventListener('input', (e) => {
+      img.prompt = e.target.value;
+    });
+
+    // Auto-fill prompts on paste in FIRST prompt
+    if (index === 0) {
+      promptTextarea.addEventListener('paste', (e) => {
+        setTimeout(() => {
+          const text = promptTextarea.value;
+          // Split by blank lines (double newline)
+          const segments = text.split(/\n\s*\n/).filter(s => s.trim());
+          if (segments.length > 1) {
+            segments.forEach((segment, i) => {
+              if (batchImages[i]) {
+                batchImages[i].prompt = segment.trim();
+              }
+            });
+            renderBatchImageList();
+          }
+        }, 10);
+      });
+    }
   });
+
+  const sortControls = document.getElementById('image-sort-controls');
+  if (sortControls) {
+    sortControls.style.display = batchImages.length > 0 ? 'flex' : 'none';
+  }
 }
+
+function sortBatchImages(criteria) {
+  switch (criteria) {
+    case 'name-asc':
+      batchImages.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { numeric: true, sensitivity: 'base' }));
+      break;
+    case 'name-desc':
+      batchImages.sort((a, b) => b.file.name.localeCompare(a.file.name, undefined, { numeric: true, sensitivity: 'base' }));
+      break;
+    case 'date-new':
+      batchImages.sort((a, b) => b.lastModified - a.lastModified);
+      break;
+    case 'date-old':
+      batchImages.sort((a, b) => a.lastModified - b.lastModified);
+      break;
+  }
+}
+
 
 // ========================================
 // START→END FRAMES FUNCTIONALITY
@@ -2733,7 +2948,8 @@ function setupStartEndFrames() {
   const startInput = document.getElementById('start-file-input');
 
   if (startZone && startInput) {
-    startZone.addEventListener('click', () => startInput.click());
+    // No longer need manual click trigger as input overlays the zone
+    // startZone.addEventListener('click', () => startInput.click());
 
     startInput.addEventListener('change', (e) => {
       const files = Array.from(e.target.files);
@@ -2749,10 +2965,17 @@ function setupStartEndFrames() {
       startZone.style.borderColor = '';
     });
 
-    startZone.addEventListener('drop', (e) => {
+    startZone.addEventListener('drop', async (e) => {
       e.preventDefault();
       startZone.style.borderColor = '';
-      const files = Array.from(e.dataTransfer.files);
+
+      let files;
+      if (e.dataTransfer.items) {
+        files = await scanFilesRecursively(e.dataTransfer.items);
+      } else {
+        files = Array.from(e.dataTransfer.files);
+      }
+
       handleStartFramesUpload(files);
     });
   }
@@ -2762,7 +2985,8 @@ function setupStartEndFrames() {
   const endInput = document.getElementById('end-file-input');
 
   if (endZone && endInput) {
-    endZone.addEventListener('click', () => endInput.click());
+    // No longer need manual click trigger as input overlays the zone
+    // endZone.addEventListener('click', () => endInput.click());
 
     endInput.addEventListener('change', (e) => {
       const files = Array.from(e.target.files);
@@ -2778,11 +3002,27 @@ function setupStartEndFrames() {
       endZone.style.borderColor = '';
     });
 
-    endZone.addEventListener('drop', (e) => {
+    endZone.addEventListener('drop', async (e) => {
       e.preventDefault();
       endZone.style.borderColor = '';
-      const files = Array.from(e.dataTransfer.files);
+
+      let files;
+      if (e.dataTransfer.items) {
+        files = await scanFilesRecursively(e.dataTransfer.items);
+      } else {
+        files = Array.from(e.dataTransfer.files);
+      }
+
       handleEndFramesUpload(files);
+    });
+  }
+
+  // Setup sorting events for pairs
+  const pairedSortSelect = document.getElementById('paired-sort-select');
+  if (pairedSortSelect) {
+    pairedSortSelect.addEventListener('change', () => {
+      sortPairedItems(pairedSortSelect.value);
+      renderPairedList();
     });
   }
 
@@ -2842,6 +3082,9 @@ function setupStartEndFrames() {
 function handleStartFramesUpload(files) {
   if (!files || files.length === 0) return;
 
+  // Sort files numerically
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
   startFrames = [];
 
   files.forEach((file) => {
@@ -2860,6 +3103,9 @@ function handleStartFramesUpload(files) {
 
 function handleEndFramesUpload(files) {
   if (!files || files.length === 0) return;
+
+  // Sort files numerically
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
   endFrames = [];
 
@@ -2881,90 +3127,112 @@ function handleEndFramesUpload(files) {
 let pairedItems = [];
 
 function updatePairedList() {
-  const container = document.getElementById('paired-list-container');
-  if (!container) return;
-
   if (startFrames.length === 0 || endFrames.length === 0) {
-    container.innerHTML = '<div style="padding: 20px; text-align: center; color: #6b7280; font-size: 13px;">Upload both START and END frames to create pairs</div>';
     pairedItems = [];
+    renderPairedList();
     return;
   }
 
   const pairCount = Math.min(startFrames.length, endFrames.length);
-
-  // Show warning if mismatch
-  if (startFrames.length !== endFrames.length) {
-    container.innerHTML = `<div style="padding: 12px; text-align: center; color: #f59e0b; font-size: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 6px; margin-bottom: 12px;">⚠️ ${startFrames.length} START vs ${endFrames.length} END frames. Creating ${pairCount} pairs.</div>`;
-  } else {
-    container.innerHTML = '';
-  }
-
-  // Initialize pairedItems array
   pairedItems = [];
 
-  // Create paired list items
   for (let i = 0; i < pairCount; i++) {
     pairedItems.push({
       startFrame: startFrames[i],
       endFrame: endFrames[i],
       prompt: ''
     });
+  }
 
+  renderPairedList();
+}
+
+function renderPairedList() {
+  const container = document.getElementById('paired-list-container');
+  const sortControls = document.getElementById('paired-sort-controls');
+  if (!container) return;
+
+  if (pairedItems.length === 0) {
+    container.innerHTML = '<div style="padding: 20px; text-align: center; color: #6b7280; font-size: 13px;">Upload both START and END frames to create pairs</div>';
+    if (sortControls) sortControls.style.display = 'none';
+    return;
+  }
+
+  if (sortControls) sortControls.style.display = 'flex';
+
+  const pairCount = pairedItems.length;
+  let html = '';
+
+  // Show warning if original frames count mismatch (optional logic)
+  if (startFrames.length !== endFrames.length && startFrames.length > 0 && endFrames.length > 0) {
+    html += `<div style="padding: 12px; text-align: center; color: #f59e0b; font-size: 12px; background: rgba(245, 158, 11, 0.1); border-radius: 6px; margin-bottom: 12px;">⚠️ ${startFrames.length} START vs ${endFrames.length} END frames. Creating ${pairCount} pairs.</div>`;
+  }
+
+  container.innerHTML = html;
+
+  pairedItems.forEach((pair, i) => {
     const pairDiv = document.createElement('div');
-    pairDiv.className = 'paired-list-item';
+    pairDiv.className = 'paired-item';
     pairDiv.dataset.index = i;
     pairDiv.innerHTML = `
-      <div class="paired-list-header">
-        <span class="paired-list-number">Pair ${i + 1}</span>
-        <button class="paired-list-remove" data-index="${i}">× Remove</button>
+      <div class="paired-item-header">
+        <span class="paired-item-number">Pair ${i + 1}</span>
+        <div class="paired-item-names" style="font-size: 10px; color: #9ca3af; margin-left: 10px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          ${pair.startFrame.file.name} ➡️ ${pair.endFrame.file.name}
+        </div>
+        <button class="paired-item-remove" data-index="${i}">×</button>
       </div>
-      <div class="paired-list-images">
-        <img class="paired-list-image" src="${startFrames[i].dataURL}" alt="START">
-        <div class="paired-list-arrow">→</div>
-        <img class="paired-list-image" src="${endFrames[i].dataURL}" alt="END">
+      <div class="paired-item-images">
+        <img class="paired-item-image" src="${pair.startFrame.dataURL}" alt="START">
+        <div class="paired-item-arrow">➔</div>
+        <img class="paired-item-image" src="${pair.endFrame.dataURL}" alt="END">
       </div>
-      <textarea class="paired-list-prompt" data-index="${i}" placeholder="Enter motion prompt for this pair..."></textarea>
+      <textarea class="paired-item-prompt" placeholder="Prompt for this pair..." data-index="${i}">${pair.prompt || ''}</textarea>
     `;
 
     container.appendChild(pairDiv);
 
-    // Add prompt input listener
-    const promptTextarea = pairDiv.querySelector('.paired-list-prompt');
-    promptTextarea.addEventListener('input', (e) => {
-      pairedItems[i].prompt = e.target.value;
+    // Remove button handler
+    pairDiv.querySelector('.paired-item-remove').addEventListener('click', () => {
+      pairedItems.splice(i, 1);
+      renderPairedList();
     });
 
-    // Auto-fill prompts on paste in FIRST textarea
+    // Prompt change handler
+    const promptTextarea = pairDiv.querySelector('.paired-item-prompt');
+    promptTextarea.addEventListener('input', (e) => {
+      pair.prompt = e.target.value;
+    });
+
+    // Auto-fill prompts on paste in FIRST prompt
     if (i === 0) {
       promptTextarea.addEventListener('paste', (e) => {
         setTimeout(() => {
-          const pastedText = promptTextarea.value;
-          const lines = pastedText.split('\n').filter(l => l.trim());
-
-          if (lines.length > 1) {
-            // Multi-line paste detected - distribute to other textareas
-            lines.forEach((line, idx) => {
-              if (idx < pairedItems.length) {
-                const targetTextarea = container.querySelector(`.paired-list-prompt[data-index="${idx}"]`);
-                if (targetTextarea) {
-                  targetTextarea.value = line.trim();
-                  pairedItems[idx].prompt = line.trim();
-                }
+          const text = promptTextarea.value;
+          // Split by blank lines (double newline)
+          const segments = text.split(/\n\s*\n/).filter(s => s.trim());
+          if (segments.length > 1) {
+            segments.forEach((segment, j) => {
+              if (pairedItems[j]) {
+                pairedItems[j].prompt = segment.trim();
               }
             });
+            renderPairedList();
           }
         }, 10);
       });
     }
+  });
+}
 
-    // Remove button handler
-    const removeBtn = pairDiv.querySelector('.paired-list-remove');
-    removeBtn.addEventListener('click', () => {
-      // Remove from arrays
-      startFrames.splice(i, 1);
-      endFrames.splice(i, 1);
-      updatePairedList();
-    });
+function sortPairedItems(criteria) {
+  switch (criteria) {
+    case 'name-asc':
+      pairedItems.sort((a, b) => a.startFrame.file.name.localeCompare(b.startFrame.file.name, undefined, { numeric: true, sensitivity: 'base' }));
+      break;
+    case 'name-desc':
+      pairedItems.sort((a, b) => b.startFrame.file.name.localeCompare(a.startFrame.file.name, undefined, { numeric: true, sensitivity: 'base' }));
+      break;
   }
 }
 
@@ -2982,8 +3250,8 @@ function setupCharacterManagement() {
 
   if (!uploadZone || !fileInput) return;
 
-  // Click zone to trigger file input
-  uploadZone.addEventListener('click', () => fileInput.click());
+  // No longer need manual click trigger as input overlays the zone
+  // uploadZone.addEventListener('click', () => fileInput.click());
 
   // Handle file selection
   fileInput.addEventListener('change', (e) => {
@@ -3001,11 +3269,18 @@ function setupCharacterManagement() {
     uploadZone.style.borderColor = '';
   });
 
-  uploadZone.addEventListener('drop', (e) => {
+  uploadZone.addEventListener('drop', async (e) => {
     e.preventDefault();
     uploadZone.style.borderColor = '';
-    const files = Array.from(e.dataTransfer.files).slice(0, 3);
-    handleCharacterImageUpload(files, previewGrid);
+
+    let files;
+    if (e.dataTransfer.items) {
+      files = await scanFilesRecursively(e.dataTransfer.items);
+    } else {
+      files = Array.from(e.dataTransfer.files);
+    }
+
+    handleCharacterImageUpload(files.slice(0, 5), previewGrid); // Allow more images for characters if needed
   });
 
   // Save character button
@@ -3112,7 +3387,7 @@ function updateCharacterList() {
       <div class="character-avatar-name">${char.name}</div>
       <button class="character-avatar-delete" data-index="${index}">×</button>
     </div>
-  `).join('');
+`).join('');
 
   // Add delete handlers
   scrollEl.querySelectorAll('.character-avatar-delete').forEach(btn => {
@@ -3174,7 +3449,7 @@ function highlightCharacterNamesInPrompt() {
     let highlightedLine = line;
 
     savedCharacters.forEach(char => {
-      const regex = new RegExp(`\\b${char.name}\\b`, 'gi');
+      const regex = new RegExp(`\\b${char.name} \\b`, 'gi');
       const matches = line.match(regex);
 
       if (matches) {
@@ -3193,9 +3468,9 @@ function highlightCharacterNamesInPrompt() {
     if (count === 0) {
       lineValidations.push(`Line ${lineIdx + 1}: ⚠️ No characters mentioned`);
     } else if (count > 3) {
-      lineValidations.push(`Line ${lineIdx + 1}: ⚠️ Too many (${count}) - max 3`);
+      lineValidations.push(`Line ${lineIdx + 1}: ⚠️ Too many(${count}) - max 3`);
     } else {
-      lineValidations.push(`Line ${lineIdx + 1}: ✅ ${count} character(s) - ${mentionedChars.join(', ')}`);
+      lineValidations.push(`Line ${lineIdx + 1}: ✅ ${count} character(s) - ${mentionedChars.join(', ')} `);
     }
   });
 
@@ -3214,7 +3489,7 @@ function highlightCharacterNamesInPrompt() {
       <div style="font-size: 11px; color: #9ca3af;">${lineValidations.join('<br>')}</div>
     `;
   } else {
-    validationDiv.innerHTML = `<span style="color: #10b981;">✅ All ${totalLines} prompts valid (1-3 characters each)</span>`;
+    validationDiv.innerHTML = `<span style="color: #10b981;">✅ All ${totalLines} prompts valid (1 - 3 characters each)</span>`;
   }
 }
 
@@ -3256,14 +3531,14 @@ function highlightCharactersInPrompt() {
   let highlightedText = promptText;
 
   savedCharacters.forEach(char => {
-    const regex = new RegExp(`\\b${char.name}\\b`, 'gi');
+    const regex = new RegExp(`\\b${char.name} \\b`, 'gi');
     const matches = promptText.match(regex);
 
     if (matches) {
       mentionedCharacters.push(char.name);
       // Highlight with yellow background
       highlightedText = highlightedText.replace(regex, (match) => {
-        return `<span style="background: #fbbf24; color: #000; padding: 2px 4px; border-radius: 3px; font-weight: 600;">${match}</span>`;
+        return `< span style = "background: #fbbf24; color: #000; padding: 2px 4px; border-radius: 3px; font-weight: 600;" > ${match}</span > `;
       });
     }
   });
@@ -3280,8 +3555,63 @@ function highlightCharactersInPrompt() {
   } else if (count > 3) {
     validationDiv.innerHTML = '<span style="color: #f59e0b;">⚠️ Maximum 3 characters allowed per prompt</span>';
   } else {
-    validationDiv.innerHTML = `<span style="color: #10b981;">✅ ${count} character(s) mentioned: ${mentionedCharacters.join(', ')}</span>`;
+    validationDiv.innerHTML = `< span style = "color: #10b981;" >✅ ${count} character(s) mentioned: ${mentionedCharacters.join(', ')}</span > `;
   }
+}
+
+// ========================================
+// UTILS & HELPERS
+// ========================================
+
+/**
+ * Recursively scans DataTransferItems for files
+ * Support dragging folders on both Windows and MacOS
+ */
+async function scanFilesRecursively(items) {
+  const files = [];
+
+  const traverse = async (entry) => {
+    if (entry.isFile) {
+      const file = await new Promise((resolve) => entry.file(resolve));
+      if (file.type.startsWith('image/')) {
+        files.push(file);
+      }
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const entries = await new Promise((resolve) => {
+        let allEntries = [];
+        const readBatch = () => {
+          reader.readEntries((batch) => {
+            if (batch.length > 0) {
+              allEntries = allEntries.concat(batch);
+              readBatch();
+            } else {
+              resolve(allEntries);
+            }
+          });
+        };
+        readBatch();
+      });
+
+      for (const child of entries) {
+        await traverse(child);
+      }
+    }
+  };
+
+  const promises = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'file') {
+      const entry = item.webkitGetAsEntry();
+      if (entry) {
+        promises.push(traverse(entry));
+      }
+    }
+  }
+
+  await Promise.all(promises);
+  return files;
 }
 
 // Helper: Convert data URL to File
@@ -3337,5 +3667,12 @@ function updateQueueDisplay() {
 console.log('[Flow Automation] Content script loaded');
 setTimeout(() => {
   injectSidebar();
+
+  // Initialize features after sidebar is in DOM
+  loadSettings();
+  setupBatchImageUpload();
+  setupStartEndFrames();
+  setupCharacterManagement();
+
   console.log('[Flow Automation] Sidebar initialized');
 }, 1000);
