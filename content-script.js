@@ -65,6 +65,22 @@ function waitForElement(xpath, timeout = 10000) {
 }
 
 /**
+ * Helper: Get or create persistent Machine ID
+ */
+async function getMachineId() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['flowMachineId'], (result) => {
+      if (result.flowMachineId) {
+        resolve(result.flowMachineId);
+      } else {
+        const newId = 'flow-' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        chrome.storage.local.set({ flowMachineId: newId }, () => resolve(newId));
+      }
+    });
+  });
+}
+
+/**
  * Helper: Sleep function
  */
 function sleep(ms) {
@@ -75,23 +91,53 @@ function sleep(ms) {
 // GLOBAL STATE & CONFIG
 // ========================================
 let supabaseConfig = {
-  url: '',
-  key: ''
+  url: 'https://cbxlihppfavrbrhlokfn.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNieGxpaHBwZmF2cmJyaGxva2ZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMDMyMDcsImV4cCI6MjA4MTY3OTIwN30.T_V8FuGmDJxlQSdaFsQ23uxkM7Dri4U9ZW-y4Nwdv0s'
 };
 let isLicenseValid = false;
 let currentLicenseKey = '';
 
 /**
+ * Helper: Add a log entry to Supabase
+ */
+async function addLicenseLog(licenseKey, eventType, details = '') {
+  const machineId = await getMachineId();
+  try {
+    await fetch(`${supabaseConfig.url}/rest/v1/license_logs`, {
+      method: "POST",
+      headers: {
+        "apikey": supabaseConfig.key,
+        "Authorization": `Bearer ${supabaseConfig.key}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({
+        license_key: licenseKey,
+        event_type: eventType,
+        machine_id: machineId,
+        details: details
+      })
+    });
+  } catch (err) {
+    console.warn("[Flow Automation] Failed to log license event:", err);
+  }
+}
+
+/**
  * Check license against Supabase
  * @param {string} licenseKey 
+ * @param {boolean} forceRegisterMachine - If true, updates last_machine_id in DB
  */
-async function checkLicense(licenseKey) {
+async function checkLicense(licenseKey, forceRegisterMachine = false) {
   if (!supabaseConfig.url || !supabaseConfig.key) {
     console.error("[Flow Automation] Supabase not configured");
     return { valid: false, error: "Supabase not configured" };
   }
 
+  const machineId = await getMachineId();
+
   try {
+    // 1. Fetch license details
     const url = `${supabaseConfig.url}/rest/v1/licenses?license_key=eq.${licenseKey}&select=*`;
     const response = await fetch(url, {
       method: "GET",
@@ -110,17 +156,50 @@ async function checkLicense(licenseKey) {
 
     if (data && data.length > 0) {
       const license = data[0];
-      if (license.status === 'active') {
-        // Check expiry
-        if (license.expires_at) {
-          const expiry = new Date(license.expires_at);
-          if (expiry < new Date()) {
-            return { valid: false, error: "License expired" };
-          }
+
+      if (license.status !== 'active') {
+        return { valid: false, error: `License status: ${license.status}` };
+      }
+
+      // Check expiry
+      if (license.expires_at) {
+        const expiry = new Date(license.expires_at);
+        if (expiry < new Date()) {
+          return { valid: false, error: "License expired" };
+        }
+      }
+
+      // 2. Handle Machine Lockdown (Last machine wins)
+      if (forceRegisterMachine) {
+        // Explicit validation: Lock this machine as the active one
+        const updateUrl = `${supabaseConfig.url}/rest/v1/licenses?license_key=eq.${licenseKey}`;
+        const updateResponse = await fetch(updateUrl, {
+          method: "PATCH",
+          headers: {
+            "apikey": supabaseConfig.key,
+            "Authorization": `Bearer ${supabaseConfig.key}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({ last_machine_id: machineId })
+        });
+
+        if (!updateResponse.ok) {
+          console.warn("[Flow Automation] Failed to update machine ID");
+        } else {
+          // Log machine change
+          await addLicenseLog(licenseKey, 'machine_change', `Machine locked: ${machineId}`);
         }
         return { valid: true, license };
       } else {
-        return { valid: false, error: `License status: ${license.status}` };
+        // Auto-check: Compare current machineId with DB
+        if (license.last_machine_id && license.last_machine_id !== machineId) {
+          return { valid: false, error: "License used on another machine" };
+        }
+        // Log successful validation periodically (e.g., once per session or day, but here we log every check for simplicity)
+        // To avoid spamming logs, we could add a throttle here later if needed
+        await addLicenseLog(licenseKey, 'validation', 'License check successful');
+        return { valid: true, license };
       }
     } else {
       return { valid: false, error: "Invalid license key" };
@@ -1061,18 +1140,109 @@ async function characterToVideo(characters, promptText = "") {
   await sleep(1000);
 
   // ============================================
-  // STEP 9: Fill prompt
+  // EXTRA STEP: Extract Official Names from UI Chips
   // ============================================
-  console.log(`[Flow Automation] Step 9: Filling prompt...`);
+  console.log(`[Flow Automation] Extra Step: Extracting official display names from chips...`);
+  const characterNamesMap = characters.map(c => ({ name: c.name.toLowerCase(), officialName: c.name }));
+
+  try {
+    const chipsArr = document.querySelectorAll('button[class*="sc-d02e9a37-1"]');
+    chipsArr.forEach((chip, idx) => {
+      let chipText = (chip.innerText || chip.textContent).replace('close', '').trim();
+      // Remove the description text if present
+      chipText = chipText.replace('Đây là thành phần của bạn, có thể dùng để làm thay đổi kết quả tạo video theo nhiều cách!', '').trim();
+      if (chipText && idx < characterNamesMap.length) {
+        console.log(`[Flow Automation] Found Official Chip Name: "${chipText}" for ${characterNamesMap[idx].name}`);
+        characterNamesMap[idx].officialName = chipText;
+      }
+    });
+  } catch (err) {
+    console.log(`[Flow Automation] Could not extract chips, falling back to original names:`, err);
+  }
+
+  // ============================================
+  // STEP 9: Fill prompt with Smart Mentions
+  // ============================================
+  console.log(`[Flow Automation] Step 9: Filling prompt with mentions...`);
 
   if (promptText) {
-    const textarea = document.getElementById("PINHOLE_TEXT_AREA_ELEMENT_ID");
+    const textarea = getElementByXPath('//*[@id="__next"]/div[2]/div/div/div[2]/div/div[1]/div[2]/div/div/div[2]/div[2]/div[1]/textarea') ||
+      document.querySelector('textarea') ||
+      document.getElementById("PINHOLE_TEXT_AREA_ELEMENT_ID");
+
     if (textarea) {
       textarea.focus();
-      textarea.value = promptText;
+      textarea.value = ''; // Clear first
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
+
+      // Process prompt to insert mentions
+      let processedPrompt = promptText;
+
+      // Sort characterNamesMap by name length descending to avoid partial matches (e.g., 'Sarah' before 'Sarah Jane')
+      const sortedMap = [...characterNamesMap].sort((a, b) => b.name.length - a.name.length);
+
+      // We need to type the prompt part by part to trigger the mention UI
+      let remainingPrompt = promptText;
+      let finalPromptValue = '';
+
+      while (remainingPrompt.length > 0) {
+        let nearestMatch = null;
+        let nearestIndex = Infinity;
+
+        // Find the next character name in the remaining string
+        for (const item of sortedMap) {
+          const idx = remainingPrompt.toLowerCase().indexOf(item.name);
+          if (idx !== -1 && idx < nearestIndex) {
+            nearestIndex = idx;
+            nearestMatch = item;
+          }
+        }
+
+        if (nearestMatch !== null) {
+          // Type text before character
+          const beforeText = remainingPrompt.substring(0, nearestIndex);
+          if (beforeText) {
+            finalPromptValue += beforeText;
+            textarea.value = finalPromptValue;
+            textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+
+          // Type @ to trigger mention
+          console.log(`[Flow Automation] Tagging character: ${nearestMatch.officialName}`);
+          finalPromptValue += ' @';
+          textarea.value = finalPromptValue;
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          await sleep(800); // Wait for mention dropdown
+
+          // Try to click the suggestion
+          const suggestion = getElementByXPath(`//div[@role="option" and contains(., "${nearestMatch.officialName}")]`) ||
+            getElementByXPath(`//button[contains(., "${nearestMatch.officialName}")]`) ||
+            document.querySelector('[role="option"]');
+
+          if (suggestion) {
+            suggestion.click();
+            await sleep(800);
+            finalPromptValue = textarea.value; // Sync with UI state (Flow adds the mention chip)
+          } else {
+            console.log(`[Flow Automation] ⚠ Mention dropdown item not found for ${nearestMatch.officialName}, using plain tag`);
+            finalPromptValue += nearestMatch.officialName;
+            textarea.value = finalPromptValue;
+            textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+
+          // Move past the matched name in our source string
+          remainingPrompt = remainingPrompt.substring(nearestIndex + nearestMatch.name.length);
+        } else {
+          // No more matches, finish the rest of the text
+          finalPromptValue += remainingPrompt;
+          textarea.value = finalPromptValue;
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          remainingPrompt = '';
+        }
+      }
+
       textarea.dispatchEvent(new Event("change", { bubbles: true }));
-      console.log(`[Flow Automation] ✓ Step 9 complete: Prompt filled`);
+      console.log(`[Flow Automation] ✓ Step 9 complete: Prompt filled with mentions`);
       await sleep(1000);
     } else {
       console.log(`[Flow Automation] ⚠ Prompt textarea not found!`);
@@ -1630,9 +1800,10 @@ if (window.location.href.includes("/tools/flow/project/")) {
 
 function createSidebarHTML() {
   return `
-    <div id="flow-automation-sidebar">
+    <div id="flow-automation-sidebar" class="position-right">
+      <div class="sidebar-resize-handle"></div>
       <div class="sidebar-header">
-        <button class="toggle-btn" id="sidebar-toggle">«</button>
+        <button class="toggle-btn" id="sidebar-toggle">»</button>
         <h2>Flow Automation</h2>
       </div>
       
@@ -1732,6 +1903,11 @@ A robot dancing in the rain"></textarea>
           
           <button class="btn-success" id="sidebar-save-character">Save Character</button>
           
+          <div id="character-suggestions" style="display: none; margin-top: 15px; padding: 10px; background: rgba(164, 123, 255, 0.1); border-radius: 8px; border: 1px solid rgba(164, 123, 255, 0.2);">
+            <div style="font-size: 11px; color: #a47bff; margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">✨ Recognized Characters:</div>
+            <div id="character-names-list" style="font-size: 13px; color: #ffffff; font-weight: 500;"></div>
+          </div>
+
           <div class="form-group" style="margin-top: 20px;">
             <label>Saved Characters (max 10)</label>
             <div class="character-avatar-scroll" id="character-avatar-scroll">
@@ -1741,11 +1917,11 @@ A robot dancing in the rain"></textarea>
           
           <div class="form-group" style="margin-top: 20px;">
             <label>Character Prompt (one per line)</label>
-            <textarea id="character-prompt" placeholder="Sarah walking in the park
-Mike playing basketball
-Robot dancing in the rain"></textarea>
-            <div id="character-prompt-preview" style="display: none; margin-top: 8px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 6px; font-size: 12px; line-height: 1.6; color: #ffffff; white-space: pre-wrap; word-wrap: break-word;"></div>
-            <div id="character-prompt-validator" style="margin-top: 8px; font-size: 12px;"></div>
+            <div style="font-size: 11px; color: #9ca3af; margin-bottom: 8px;">Tip: Mention 1-3 names below to enable highlighting.</div>
+            <textarea id="character-prompt" placeholder="mike walking in the park
+bao playing basketball"></textarea>
+            <div id="character-prompt-preview" style="display: none; margin-top: 10px; padding: 12px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(164, 123, 255, 0.2); border-radius: 8px; font-size: 13px; line-height: 1.6; color: #ffffff; white-space: pre-wrap; word-wrap: break-word;"></div>
+            <div id="character-prompt-validator" style="margin-top: 8px; font-size: 12px; font-weight: 500;"></div>
           </div>
           
           <button class="btn-primary" id="sidebar-add-character-video">Add to Queue</button>
@@ -1757,23 +1933,10 @@ Robot dancing in the rain"></textarea>
           <div class="form-group">
             <label>License Key</label>
             <input type="text" id="sidebar-license-key" placeholder="Enter your license key">
-            <div id="license-status-msg" style="margin-top: 5px; font-size: 11px;">Status: Checking...</div>
+            <div id="license-status-msg" style="margin-top: 5px; font-size: 11px;">Status: Waiting for key...</div>
           </div>
           <button class="btn-primary" id="sidebar-validate-license">Validate License</button>
 
-          <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(255,255,255,0.1);">
-          
-          <div class="section-title">Supabase Configuration</div>
-          <p style="font-size: 11px; color: #9ca3af; margin-bottom: 10px;">Connect your own license database</p>
-          <div class="form-group">
-            <label>Project URL</label>
-            <input type="text" id="sidebar-supabase-url" placeholder="https://xyz.supabase.co">
-          </div>
-          <div class="form-group">
-            <label>Anon Key</label>
-            <input type="text" id="sidebar-supabase-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
-          </div>
-          <button class="btn-secondary" id="sidebar-save-config">Save Config</button>
         </div>
         
         <!-- QUEUE TAB -->
@@ -1804,43 +1967,55 @@ Robot dancing in the rain"></textarea>
       </div>
       <div class="sidebar-footer">
           <div class="settings-section">
-            <div class="settings-row">
-              <label>⏱️ Random delay (seconds):</label>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <input type="number" id="sidebar-delay-min" min="1" max="120" value="5" style="width: 60px;">
-                <span>-</span>
-                <input type="number" id="sidebar-delay-max" min="1" max="120" value="10" style="width: 60px;">
-                <span>sec</span>
+            <div class="settings-header-toggle" id="sidebar-settings-toggle">
+              <span class="settings-toggle-title">⚙️ Cấu hình Automation</span>
+              <span class="settings-toggle-icon">▼</span>
+            </div>
+
+            <div class="settings-content" id="sidebar-settings-content">
+              <div class="settings-row">
+                <label>⏱️ Random delay (seconds):</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="number" id="sidebar-delay-min" min="1" max="120" value="5" style="width: 60px;">
+                  <span>-</span>
+                  <input type="number" id="sidebar-delay-max" min="1" max="120" value="10" style="width: 60px;">
+                  <span>sec</span>
+                </div>
               </div>
-            </div>
-            
-            <div class="settings-row">
-              <label>⏸️ Cooldown after every:</label>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <input type="number" id="sidebar-cooldown-after" min="1" max="100" value="5" style="width: 60px;">
-                <span>tasks, wait</span>
-                <input type="number" id="sidebar-cooldown-duration" min="10" max="600" value="60" style="width: 60px;">
-                <span>sec</span>
+              
+              <div class="settings-row">
+                <label>⏸️ Cooldown after every:</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="number" id="sidebar-cooldown-after" min="1" max="100" value="5" style="width: 60px;">
+                  <span>tasks, wait</span>
+                  <input type="number" id="sidebar-cooldown-duration" min="10" max="600" value="60" style="width: 60px;">
+                  <span>sec</span>
+                </div>
               </div>
+              
+              <div class="settings-row">
+                <label>📍 Sidebar position:</label>
+                <select id="sidebar-position" style="padding: 6px 10px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: #e5e5e5; font-size: 13px; cursor: pointer;">
+                  <option value="right" selected>Right</option>
+                  <option value="left">Left</option>
+                </select>
+              </div>
+              
+              <div class="settings-row">
+                <label style="cursor: pointer; user-select: none;">
+                  <input type="checkbox" id="sidebar-auto-download">
+                  📥 Auto-download completed videos
+                </label>
+              </div>
+              
+              <button class="btn-success" id="sidebar-save-settings" style="width: 100%; margin-top: 12px;">💾 Save Settings</button>
             </div>
-            
-            <div class="settings-row">
-              <label>📍 Sidebar position:</label>
-              <select id="sidebar-position" style="padding: 6px 10px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: #e5e5e5; font-size: 13px; cursor: pointer;">
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-                <option value="bottom">Bottom</option>
-              </select>
+
+            <div style="margin-top: 15px; text-align: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 12px;">
+              <a href="https://zalo.me/g/drtdwy518" target="_blank" style="color: #a47bff; text-decoration: none; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                💬 Hỗ trợ kỹ thuật: Zalo Group
+              </a>
             </div>
-            
-            <div class="settings-row">
-              <label style="cursor: pointer; user-select: none;">
-                <input type="checkbox" id="sidebar-auto-download">
-                📥 Auto-download completed videos
-              </label>
-            </div>
-            
-            <button class="btn-success" id="sidebar-save-settings" style="width: 100%; margin-top: 12px;">💾 Save Settings</button>
           </div>
         </div>
     </div>
@@ -1921,7 +2096,7 @@ function setupSidebarEvents() {
         statusMsg.style.color = "#a47bff";
       }
 
-      const result = await checkLicense(key);
+      const result = await checkLicense(key, true); // TRUE: Lock this machine as the active one
       if (result.valid) {
         isLicenseValid = true;
         currentLicenseKey = key;
@@ -1940,24 +2115,21 @@ function setupSidebarEvents() {
     });
   }
 
-  // Save Config button (Supabase)
-  const saveConfigBtn = document.getElementById('sidebar-save-config');
-  if (saveConfigBtn) {
-    saveConfigBtn.addEventListener('click', () => {
-      const url = document.getElementById('sidebar-supabase-url')?.value;
-      const key = document.getElementById('sidebar-supabase-key')?.value;
 
-      supabaseConfig.url = url;
-      supabaseConfig.key = key;
+  // Settings Toggle logic
+  const settingsToggle = document.getElementById('sidebar-settings-toggle');
+  const settingsContent = document.getElementById('sidebar-settings-content');
+  if (settingsToggle && settingsContent) {
+    settingsToggle.addEventListener('click', () => {
+      const isCollapsed = settingsContent.classList.toggle('collapsed');
+      const icon = settingsToggle.querySelector('.settings-toggle-icon');
+      if (icon) icon.textContent = isCollapsed ? '▶' : '▼';
 
-      chrome.storage.local.set({ flowSupabaseConfig: supabaseConfig }, () => {
-        const originalText = saveConfigBtn.textContent;
-        saveConfigBtn.textContent = '✅ Config Saved!';
-        saveConfigBtn.style.background = 'rgba(16, 185, 129, 0.2)';
-        setTimeout(() => {
-          saveConfigBtn.textContent = originalText;
-          saveConfigBtn.style.background = '';
-        }, 2000);
+      // Save collapse state
+      chrome.storage.local.get(['flowAutomationSettings'], (result) => {
+        const settings = result.flowAutomationSettings || {};
+        settings.settingsCollapsed = isCollapsed;
+        chrome.storage.local.set({ flowAutomationSettings: settings });
       });
     });
   }
@@ -2198,17 +2370,67 @@ function setupSidebarEvents() {
     positionSelect.addEventListener('change', (e) => {
       const position = e.target.value;
 
-      // Remove all position classes
+      // Clear all existing position classes
       sidebar.classList.remove('position-left', 'position-right', 'position-bottom');
 
-      // Add selected position class (left is default, no class needed)
-      if (position === 'right') {
-        sidebar.classList.add('position-right');
-      } else if (position === 'bottom') {
-        sidebar.classList.add('position-bottom');
+      // Add selected position class
+      if (position === 'left') {
+        sidebar.classList.add('position-left');
+        const toggle = document.getElementById('sidebar-toggle');
+        if (toggle) toggle.textContent = '«';
+      } else {
+        // Default is right
+        const toggle = document.getElementById('sidebar-toggle');
+        if (toggle) toggle.textContent = '»';
       }
 
       console.log(`[Flow Automation] Position changed to: ${position}`);
+    });
+  }
+
+  // Resizable Logic
+  const resizer = sidebar.querySelector('.sidebar-resize-handle');
+  if (resizer) {
+    let isResizing = false;
+    let startX, startWidth;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = parseInt(getComputedStyle(sidebar).width, 10);
+      resizer.classList.add('resizing');
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+
+      const position = document.getElementById('sidebar-position')?.value || 'right';
+      let newWidth;
+
+      if (position === 'right') {
+        newWidth = startWidth + (startX - e.clientX);
+      } else if (position === 'left') {
+        newWidth = startWidth + (e.clientX - startX);
+      }
+
+      if (newWidth >= 300 && newWidth <= 800) {
+        sidebar.style.width = `${newWidth}px`;
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isResizing) return;
+      isResizing = false;
+      resizer.classList.remove('resizing');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      // Save width to settings
+      const settings = JSON.parse(localStorage.getItem('flowAutomationSettings') || '{}');
+      settings.width = sidebar.style.width;
+      localStorage.setItem('flowAutomationSettings', JSON.stringify(settings));
     });
   }
 
@@ -2223,24 +2445,31 @@ function setupSidebarEvents() {
 
 // Load settings from chrome storage
 function loadSettings() {
-  chrome.storage.local.get(['flowAutomationSettings', 'flowLicenseKey', 'flowSupabaseConfig'], (result) => {
-    // Load Supabase Config
-    if (result.flowSupabaseConfig) {
-      supabaseConfig = result.flowSupabaseConfig;
-      const urlInput = document.getElementById('sidebar-supabase-url');
-      const keyInput = document.getElementById('sidebar-supabase-key');
-      if (urlInput) urlInput.value = supabaseConfig.url || '';
-      if (keyInput) keyInput.value = supabaseConfig.key || '';
-    }
+  chrome.storage.local.get(['flowAutomationSettings', 'flowLicenseKey'], (result) => {
 
     // Load License Key
     if (result.flowLicenseKey) {
       const licenseInput = document.getElementById('sidebar-license-key');
       if (licenseInput) {
         licenseInput.value = result.flowLicenseKey;
-        // Auto-validate
-        const validateBtn = document.getElementById('sidebar-validate-license');
-        if (validateBtn) setTimeout(() => validateBtn.click(), 500);
+        // Auto-validate (just check, don't kick others)
+        checkLicense(result.flowLicenseKey, false).then(res => {
+          const statusMsg = document.getElementById('license-status-msg');
+          if (res.valid) {
+            isLicenseValid = true;
+            currentLicenseKey = result.flowLicenseKey;
+            if (statusMsg) {
+              statusMsg.textContent = "Status: ACTIVE ✅";
+              statusMsg.style.color = "#10b981";
+            }
+          } else {
+            isLicenseValid = false;
+            if (statusMsg) {
+              statusMsg.textContent = `Status: INVALID ❌ (${res.error})`;
+              statusMsg.style.color = "#ef4444";
+            }
+          }
+        });
       }
     }
 
@@ -2280,6 +2509,24 @@ function loadSettings() {
       const el = document.getElementById('sidebar-auto-download');
       if (el) el.checked = settings.autoDownload;
     }
+
+    // Load settings collapse state
+    if (settings.settingsCollapsed !== undefined) {
+      const content = document.getElementById('sidebar-settings-content');
+      const toggle = document.getElementById('sidebar-settings-toggle');
+      if (content) {
+        if (settings.settingsCollapsed) {
+          content.classList.add('collapsed');
+          const icon = toggle?.querySelector('.settings-toggle-icon');
+          if (icon) icon.textContent = '▶';
+        } else {
+          content.classList.remove('collapsed');
+          const icon = toggle?.querySelector('.settings-toggle-icon');
+          if (icon) icon.textContent = '▼';
+        }
+      }
+    }
+
     if (settings.position) {
       const positionSelect = document.getElementById('sidebar-position');
       const sidebar = document.getElementById('flow-automation-sidebar');
@@ -2289,10 +2536,19 @@ function loadSettings() {
       // Apply position class
       if (sidebar) {
         sidebar.classList.remove('position-left', 'position-right', 'position-bottom');
-        if (settings.position === 'right') {
-          sidebar.classList.add('position-right');
-        } else if (settings.position === 'bottom') {
-          sidebar.classList.add('position-bottom');
+        if (settings.position === 'left') {
+          sidebar.classList.add('position-left');
+          const toggle = document.getElementById('sidebar-toggle');
+          if (toggle) toggle.textContent = '«';
+        } else {
+          // Default Right
+          const toggle = document.getElementById('sidebar-toggle');
+          if (toggle) toggle.textContent = '»';
+        }
+
+        // Apply saved width
+        if (settings.width) {
+          sidebar.style.width = settings.width;
         }
       }
     }
@@ -2890,7 +3146,7 @@ function updateCharacterSuggestions() {
 function highlightCharacterNamesInPrompt() {
   const promptTextarea = document.getElementById('character-prompt');
   const previewDiv = document.getElementById('character-prompt-preview');
-  const validationDiv = document.getElementById('character-prompt-validation');
+  const validationDiv = document.getElementById('character-prompt-validator');
 
   if (!promptTextarea || !previewDiv || !validationDiv) return;
 

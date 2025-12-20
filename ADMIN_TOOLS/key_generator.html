@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fibus Admin - Control Center</title>
+    <style>
+        :root {
+            --primary: #a47bff;
+            --primary-dark: #8b5cf6;
+            --bg: #0f0f1a;
+            --card: #1a1a2b;
+            --second-bg: #11111e;
+            --text: #ffffff;
+            --input: rgba(255, 255, 255, 0.05);
+            --success: #10b981;
+            --error: #ef4444;
+            --warn: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Navigation */
+        .admin-layout {
+            display: flex;
+            flex: 1;
+        }
+
+        .admin-nav {
+            width: 240px;
+            background: var(--card);
+            border-right: 1px solid rgba(164, 123, 255, 0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .nav-header {
+            padding: 0 10px 20px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 10px;
+        }
+
+        .nav-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: var(--primary);
+        }
+
+        .nav-item {
+            padding: 12px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 600;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item:hover {
+            background: rgba(164, 123, 255, 0.05);
+            color: var(--text);
+        }
+
+        .nav-item.active {
+            background: rgba(164, 123, 255, 0.1);
+            color: var(--primary);
+        }
+
+        /* Main Content Area */
+        .admin-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+
+        .tab-panel {
+            display: none;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .tab-panel.active {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Common Components */
+        .card {
+            background: var(--card);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(164, 123, 255, 0.15);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        h3 {
+            margin-top: 0;
+            font-size: 20px;
+            color: var(--text);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #9ca3af;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--input);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        button {
+            padding: 14px 20px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(164, 123, 255, 0.4);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.05);
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: #d1d5db;
+        }
+
+        tr:hover td {
+            background: rgba(164, 123, 255, 0.02);
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-active {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .badge-expired {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+        }
+
+        .badge-event {
+            background: rgba(164, 123, 255, 0.1);
+            color: var(--primary);
+        }
+
+        .action-btn {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error);
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .action-btn:hover {
+            background: var(--error);
+            color: white;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        /* Results area for Generator */
+        .bulk-results {
+            margin-top: 25px;
+            background: var(--second-bg);
+            border-radius: 12px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        #progress-bar-container {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            margin: 20px 0;
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        #progress-bar {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="admin-layout">
+        <!-- Navigation -->
+        <div class="admin-nav">
+            <div class="nav-header">
+                <h2>Fibus Admin</h2>
+            </div>
+            <div class="nav-item active" onclick="switchTab('gen')">✨ Key Generator</div>
+            <div class="nav-item" onclick="switchTab('manage')">🛡️ Management</div>
+            <div class="nav-item" onclick="switchTab('logs')">📋 Audit Logs</div>
+        </div>
+
+        <!-- Content -->
+        <div class="admin-content">
+
+            <!-- GENERATOR TAB -->
+            <div id="tab-gen" class="tab-panel active">
+                <div class="card">
+                    <h3>Bulk Key Generator</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Key Prefix</label>
+                            <input type="text" id="prefix" value="FIBUS">
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity</label>
+                            <input type="number" id="quantity" value="1" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Duration (Days)</label>
+                            <input type="number" id="days" value="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Note / Batch Name</label>
+                            <input type="text" id="batch-note" placeholder="Year-End Sale">
+                        </div>
+                    </div>
+                    <button class="btn-primary" id="btn-create" onclick="generateBulk()">🚀 Generate & Activate
+                        Batch</button>
+
+                    <div id="progress-bar-container">
+                        <div id="progress-bar"></div>
+                    </div>
+
+                    <div id="gen-results" class="bulk-results" style="display: none;">
+                        <div class="toolbar" style="margin-bottom: 10px;">
+                            <span style="font-size: 13px; color: var(--primary);">Generated Keys:</span>
+                            <button class="refresh-btn" onclick="copyGenAll()">📋 Copy All</button>
+                        </div>
+                        <div id="keyList" class="mono" style="font-size: 13px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MANAGEMENT TAB -->
+            <div id="tab-manage" class="tab-panel">
+                <div class="card">
+                    <div class="toolbar">
+                        <h3>Active Licenses</h3>
+                        <button class="refresh-btn" onclick="loadLicenses()">🔄 Refresh List</button>
+                    </div>
+                    <table id="table-licenses">
+                        <thead>
+                            <tr>
+                                <th>License Key</th>
+                                <th>Machine ID</th>
+                                <th>Expiry</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- LOGS TAB -->
+            <div id="tab-logs" class="tab-panel">
+                <div class="card">
+                    <div class="toolbar">
+                        <h3>Activity Audit Logs</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="log-filter" placeholder="Filter by Key..."
+                                style="width: 200px; padding: 6px 12px;">
+                            <button class="refresh-btn" onclick="loadLogs()">🔄 Refresh</button>
+                        </div>
+                    </div>
+                    <table id="table-logs">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>License Key</th>
+                                <th>Event Type</th>
+                                <th>Machine</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Data injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const supabaseConfig = {
+            url: 'https://cbxlihppfavrbrhlokfn.supabase.co',
+            key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNieGxpaHBwZmF2cmJyaGxva2ZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMDMyMDcsImV4cCI6MjA4MTY3OTIwN30.T_V8FuGmDJxlQSdaFsQ23uxkM7Dri4U9ZW-y4Nwdv0s'
+        };
+
+        let generatedKeysPool = [];
+
+        // --- Tab Logic ---
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            event.target.classList.add('active');
+
+            if (tab === 'manage') loadLicenses();
+            if (tab === 'logs') loadLogs();
+        }
+
+        // --- Generator Logic ---
+        async function generateBulk() {
+            const btn = document.getElementById('btn-create');
+            const quantity = parseInt(document.getElementById('quantity').value) || 1;
+            const prefix = document.getElementById('prefix').value || 'FIBUS';
+            const days = parseInt(document.getElementById('days').value) || 30;
+            const note = document.getElementById('batch-note').value || '';
+
+            const bar = document.getElementById('progress-bar');
+            const container = document.getElementById('progress-bar-container');
+            const list = document.getElementById('keyList');
+            const resDiv = document.getElementById('gen-results');
+
+            btn.disabled = true;
+            btn.textContent = `🚀 Creating ${quantity} keys...`;
+            container.style.display = 'block';
+            resDiv.style.display = 'block';
+            list.innerHTML = '';
+            generatedKeysPool = [];
+
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + days);
+            const expiryStr = expiryDate.toISOString().split('T')[0] + ' 23:59:59+00';
+
+            for (let i = 0; i < quantity; i++) {
+                const part1 = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const part2 = Math.random().toString(36).substring(2, 6).toUpperCase();
+                const key = `${prefix}-${part1}-${part2}`;
+
+                try {
+                    const response = await fetch(`${supabaseConfig.url}/rest/v1/licenses`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': supabaseConfig.key,
+                            'Authorization': `Bearer ${supabaseConfig.key}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=minimal'
+                        },
+                        body: JSON.stringify({
+                            license_key: key,
+                            expires_at: expiryStr,
+                            notes: note,
+                            status: 'active'
+                        })
+                    });
+
+                    if (response.ok) {
+                        generatedKeysPool.push(key);
+                        list.innerHTML += `<div style="padding: 4px 0;">${key} <span style="color:var(--success)">✔ Active</span></div>`;
+                    }
+                } catch (err) { }
+
+                bar.style.width = `${((i + 1) / quantity) * 100}%`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🚀 Generate & Activate Batch';
+            setTimeout(() => container.style.display = 'none', 1000);
+        }
+
+        function copyGenAll() {
+            if (!generatedKeysPool.length) return;
+            navigator.clipboard.writeText(generatedKeysPool.join('\n'));
+            alert('All keys copied to clipboard!');
+        }
+
+        // --- Management Logic ---
+        async function loadLicenses() {
+            const tbody = document.querySelector('#table-licenses tbody');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">Loading licenses...</td></tr>';
+
+            try {
+                const resp = await fetch(`${supabaseConfig.url}/rest/v1/licenses?order=created_at.desc`, {
+                    headers: { 'apikey': supabaseConfig.key, 'Authorization': `Bearer ${supabaseConfig.key}` }
+                });
+                const data = await resp.json();
+
+                tbody.innerHTML = '';
+                data.forEach(lic => {
+                    const isExpired = lic.expires_at && new Date(lic.expires_at) < new Date();
+                    const statusBadge = isExpired ?
+                        '<span class="badge badge-expired">Expired</span>' :
+                        `<span class="badge badge-active">${lic.status}</span>`;
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="mono">${lic.license_key}</td>
+                        <td style="font-size:12px">${lic.last_machine_id || '---'}</td>
+                        <td style="display:flex; gap:8px; align-items:center;">
+                            <input type="date" value="${lic.expires_at ? lic.expires_at.split('T')[0] : ''}" 
+                                   id="date-${lic.id}" 
+                                   style="padding: 6px; width: 130px; font-size: 13px; background: rgba(0,0,0,0.3); border: 1px solid rgba(164,123,255,0.2); color: white; border-radius: 6px;">
+                            <button onclick="updateExpiry('${lic.license_key}', '${lic.id}')" 
+                                    style="padding: 6px 10px; font-size: 11px; background: var(--primary); color: white; border-radius: 6px; width: auto; height: auto;">Save</button>
+                        </td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="action-btn" onclick="deleteLicense('${lic.license_key}')">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--error)">Error loading data.</td></tr>';
+            }
+        }
+
+        async function updateExpiry(key, id) {
+            const newDate = document.getElementById(`date-${id}`).value;
+            if (!newDate) return;
+
+            try {
+                const resp = await fetch(`${supabaseConfig.url}/rest/v1/licenses?license_key=eq.${key}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': supabaseConfig.key,
+                        'Authorization': `Bearer ${supabaseConfig.key}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        expires_at: newDate + ' 23:59:59+00'
+                    })
+                });
+
+                if (resp.ok) {
+                    alert('Expiry updated successfully!');
+                    loadLicenses();
+                } else {
+                    alert('Update failed');
+                }
+            } catch (err) { alert('Error: ' + err.message); }
+        }
+
+        async function deleteLicense(key) {
+            if (!confirm(`Are you sure you want to delete license: ${key}?`)) return;
+
+            try {
+                const resp = await fetch(`${supabaseConfig.url}/rest/v1/licenses?license_key=eq.${key}`, {
+                    method: 'DELETE',
+                    headers: { 'apikey': supabaseConfig.key, 'Authorization': `Bearer ${supabaseConfig.key}` }
+                });
+                if (resp.ok) loadLicenses();
+            } catch (err) { alert('Delete failed: ' + err.message); }
+        }
+
+        // --- Logs Logic ---
+        async function loadLogs() {
+            const tbody = document.querySelector('#table-logs tbody');
+            const filter = document.getElementById('log-filter').value;
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">Loading logs...</td></tr>';
+
+            let url = `${supabaseConfig.url}/rest/v1/license_logs?order=created_at.desc&limit=100`;
+            if (filter) url += `&license_key=ilike.*${filter}*`;
+
+            try {
+                const resp = await fetch(url, {
+                    headers: { 'apikey': supabaseConfig.key, 'Authorization': `Bearer ${supabaseConfig.key}` }
+                });
+                const data = await resp.json();
+
+                tbody.innerHTML = '';
+                data.forEach(log => {
+                    const row = document.createElement('tr');
+                    const time = new Date(log.created_at).toLocaleString();
+                    row.innerHTML = `
+                    <td style="font-size:12px">${time}</td>
+                    <td class="mono">${log.license_key}</td>
+                    <td><span class="badge badge-event">${log.event_type}</span></td>
+                    <td style="font-size:11px">${log.machine_id || '---'}</td>
+                    <td style="font-size:11px">${log.details || ''}</td>
+                `;
+                    tbody.appendChild(row);
+                });
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--error)">Error loading logs.</td></tr>';
+            }
+        }
+    </script>
+
+</body>
+
+</html>
